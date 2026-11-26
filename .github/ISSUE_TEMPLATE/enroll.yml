@@ -1,5 +1,5 @@
 name: 领取仓库
-description: 在本组织下为你创建一个公开仓库, 只有你能推送
+description: 在本组织下为你的应用创建一个公开仓库, 只有你和队友能推送
 title: 领取仓库
 body:
   - type: markdown
@@ -7,7 +7,8 @@ body:
       value: |
         点 **Create** 提交即可, 机器人会在一两分钟内回复仓库地址和邀请链接.
 
-        - 每个应用一个仓库, 名字是 `app-<应用名>-<你的 GitHub 用户名>`, 公开, 只有你 (和审核员) 能推送. 做多个应用就领多次.
+        - 每个应用一个仓库, 名字是 `app-<应用名>-<你的 GitHub 用户名>`, 公开, 只有你和队友 (和审核员) 能推送. 做多个应用就领多次.
+        - 组队: 一队最多 4 人, 一个人只能在一个队. 由队长来领, 在「队友」里写上其他队员; 队里每个人都能推本队的所有仓库.
         - `main` 分支不能 force push, 不能删除: 推上去的提交都会留下来.
         - 每次 push 会自动跑 `acdev check` 和 `acdev build`, 结果在仓库的 Actions 页面. 作品由审核员人工审核.
         - 不要改这个 issue 的标题.
@@ -19,6 +20,14 @@ body:
       placeholder: markdown-editor
     validations:
       required: true
+  - type: textarea
+    id: team
+    attributes:
+      label: 队友
+      description: 其他队员的 GitHub 用户名, 最多 3 个, 用空格、逗号或换行隔开, 可以带 `@`. 一个人做就留空. 以后要加人, 用同一个应用名重新开一个 issue, 在这里写上他.
+      placeholder: "@bob, carol"
+    validations:
+      required: false
   - type: checkboxes
     id: confirm
     attributes:
