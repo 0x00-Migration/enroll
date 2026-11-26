@@ -1,0 +1,50 @@
+name: 提名项目
+description: 推荐一个 GitHub 项目加进项目列表, 由维护者审核
+title: "提名项目: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        推荐一个 1000 star 以上的 GitHub 项目, 维护者审核通过后加进 [项目列表](https://github.com/0x00-Migration/enroll/blob/main/PROJECTS.md). 机器人不处理提名, 维护者会在这个 issue 里回复.
+
+        - 标题冒号后面写项目名.
+  - type: input
+    id: upstream
+    attributes:
+      label: 项目地址
+      description: GitHub 仓库地址.
+      placeholder: https://github.com/excalidraw/excalidraw
+    validations:
+      required: true
+  - type: input
+    id: stars
+    attributes:
+      label: Star 数
+      placeholder: "90000"
+    validations:
+      required: true
+  - type: input
+    id: license
+    attributes:
+      label: 许可证
+      description: 仓库的开源许可证, 比如 MIT, Apache-2.0, GPL-3.0.
+      placeholder: MIT
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: 为什么推荐
+      description: 为什么适合移植, 比如用的人多, 功能边界清楚, 移植以后有用.
+    validations:
+      required: true
+  - type: textarea
+    id: features
+    attributes:
+      label: 核心功能
+      description: 移植以后至少要有的功能, 一行一个. 维护者会参考它写列表里的核心功能.
+      placeholder: |
+        - 画图
+        - 导出 PNG
+    validations:
+      required: true

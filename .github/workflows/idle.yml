@@ -1,0 +1,37 @@
+name: Release idle claims
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  release:
+    concurrency:
+      group: enroll
+      queue: max
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: app
+        if: vars.ENROLL_APP_CLIENT_ID != ''
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
+        with:
+          client-id: ${{ vars.ENROLL_APP_CLIENT_ID }}
+          private-key: ${{ secrets.ENROLL_APP_KEY }}
+          owner: ${{ github.repository_owner }}
+      - name: Archive contest claims with no push from their player
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token || secrets.ENROLL_TOKEN }}
+          ISSUE_TOKEN: ${{ github.token }}
+          PREFIX: ${{ vars.PREFIX }}
+          IDLE_DAYS: ${{ vars.IDLE_DAYS }}
+        run: python3 -u idle.py

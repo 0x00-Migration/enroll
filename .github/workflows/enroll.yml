@@ -14,14 +14,13 @@ permissions:
   contents: read
   issues: write
 
-concurrency:
-  group: enroll-${{ github.event.issue.user.id || inputs.issue }}
-  queue: max
-  cancel-in-progress: false
-
 jobs:
   enroll:
-    if: github.event_name == 'workflow_dispatch' || !github.event.issue.pull_request
+    if: github.event_name == 'workflow_dispatch' || (!github.event.issue.pull_request && (contains(github.event.issue.title, '领取仓库') || contains(github.event.issue.title, '放弃项目')))
+    concurrency:
+      group: enroll
+      queue: max
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -35,11 +34,13 @@ jobs:
           client-id: ${{ vars.ENROLL_APP_CLIENT_ID }}
           private-key: ${{ secrets.ENROLL_APP_KEY }}
           owner: ${{ github.repository_owner }}
-      - name: Create the repository and reply
+      - name: Claim or give up, and reply
         env:
           GH_TOKEN: ${{ steps.app.outputs.token || secrets.ENROLL_TOKEN }}
           ISSUE_TOKEN: ${{ github.token }}
           ISSUE_NUMBER: ${{ inputs.issue }}
           TEMPLATE: ${{ vars.TEMPLATE }}
           PREFIX: ${{ vars.PREFIX }}
+          MAX_REPOS: ${{ vars.MAX_REPOS }}
+          IDLE_DAYS: ${{ vars.IDLE_DAYS }}
         run: python3 -u enroll.py
