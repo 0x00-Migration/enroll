@@ -390,6 +390,16 @@ class ExclusiveTest(unittest.TestCase):
         claim(api, "excalidraw", issue=7)
         self.assertEqual(state(api), before)
 
+    def test_renamed_player_cannot_hold_a_project_twice(self):
+        api = FakeGitHub()
+        claim(api, "excalidraw", BOB)
+        bobby = api.users["bobby"] = dict(api.users.pop("bob"), login="bobby")
+        before = state(api)
+        with self.assertRaises(enroll.Refusal) as refused:
+            claim(api, "excalidraw", bobby)
+        self.assertIn("https://github.com/org/app-excalidraw-bob", str(refused.exception))
+        self.assertEqual(state(api), before)
+
     def test_warm_up_project_is_open_to_everyone(self):
         api = FakeGitHub()
         claim(api, "hello", BOB, now=WARMUP_TIME)

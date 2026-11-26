@@ -64,11 +64,16 @@ def candidates(api, repos, prefix, ids, keep=lambda repo: True):
 
 
 def check_available(api, org, prefix, catalog, student, project, max_repos):
+    """Refuse a contest claim whose project has a holder or that would pass MAX_REPOS; the claimed repository does not hold it yet."""
     repos = active_repos(api, org)
     for repo, values in candidates(api, repos, prefix, [project.id]):
-        if values.get("PROJECT") == project.id and values.get("STUDENT_ID") != str(student["id"]):
+        if values.get("PROJECT") != project.id:
+            continue
+        if values.get("STUDENT_ID") != str(student["id"]):
             raise Refusal(f"正式赛项目 `{project.id}` 现在归别人 ({repo['html_url']}), 同一时间一个项目只归一个人. "
                           "他放弃或者项目被收回以后, 项目会回到列表. 请换一个项目, 从领取页面重新开一个 issue.")
+        raise Refusal(f"你已经领着正式赛项目 `{project.id}`: {repo['html_url']} (你改 GitHub 用户名之前领的), 同一个项目不能领两次. "
+                      "请接着在这个仓库里做; 有疑问请联系维护者.")
     if max_repos is None:
         return
     contest = {listed.id for listed in catalog.projects.values() if not listed.warmup}
