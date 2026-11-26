@@ -9,7 +9,7 @@
 - `.github/ISSUE_TEMPLATE/enroll.yml`: 领取表单, 标题固定为 `领取仓库` (标题不是它的 issue 机器人不理); 必填的「应用名」由 `enroll.py` 的 `app_name` 从 issue 正文的 `### 应用名` 一节读出, 转小写,
   只许小写字母、数字和单个 `-` 连接, 最多 40 个字符. 选填的「队友」由 `teammates` 从 `### 队友` 一节读出: 最多 3 个 GitHub 用户名, 用空格、逗号或换行隔开, 可以带 `@`.
   改表单里这两项的 label 要同时改 `APP_LABEL`、`TEAM_LABEL`.
-- `.github/workflows/enroll.yml`: issue 打开时运行 `enroll.py`; 手动运行可填 issue 号重试.
+- `.github/workflows/enroll.yml`: issue 打开时运行 `enroll.py`; 手动运行可填 issue 号重试. 所有领取排成一队, 一次只跑一个 (concurrency 组 `enroll`), 两个队长不会同时把同一个人加进各自的队.
 - `enroll.py`: 领取逻辑, 可重复运行 (中途失败重跑会接着做, 不会重复建仓库或重复邀请).
 - `github.py`: 只用标准库的 REST 客户端 (重试、限流、刚创建的资源暂时 404).
 - `tests/`: `python3 -m unittest discover -s tests`, 用内存里的假 GitHub.
