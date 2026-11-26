@@ -1,0 +1,45 @@
+name: Enroll
+
+on:
+  issues:
+    types: [opened]
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: Issue number to retry
+        required: true
+        type: number
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: enroll-${{ github.event.issue.user.id || inputs.issue }}
+  queue: max
+  cancel-in-progress: false
+
+jobs:
+  enroll:
+    if: github.event_name == 'workflow_dispatch' || !github.event.issue.pull_request
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: app
+        if: vars.ENROLL_APP_CLIENT_ID != ''
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
+        with:
+          client-id: ${{ vars.ENROLL_APP_CLIENT_ID }}
+          private-key: ${{ secrets.ENROLL_APP_KEY }}
+          owner: ${{ github.repository_owner }}
+      - name: Create the repository and reply
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token || secrets.ENROLL_TOKEN }}
+          ISSUE_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ inputs.issue }}
+          TEMPLATE: ${{ vars.TEMPLATE }}
+          PREFIX: ${{ vars.PREFIX }}
+        run: python3 -u enroll.py

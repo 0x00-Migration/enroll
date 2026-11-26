@@ -1,0 +1,20 @@
+name: 领取仓库
+description: 在本组织下为你创建一个公开仓库, 只有你能推送
+title: 领取仓库
+body:
+  - type: markdown
+    attributes:
+      value: |
+        点 **Create** 提交即可, 机器人会在一两分钟内回复仓库地址和邀请链接.
+
+        - 仓库名是 `app-<你的 GitHub 用户名>`, 公开, 只有你 (和审核员) 能推送.
+        - `main` 分支不能 force push, 不能删除: 推上去的提交都会留下来.
+        - 每次 push 会自动跑 `acdev check` 和 `acdev build`, 结果在仓库的 Actions 页面. 作品由审核员人工审核.
+        - 不要改这个 issue 的标题.
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: 确认
+      options:
+        - label: 我用的是自己的个人 GitHub 账号, 并同意作品以公开仓库的形式提交
+          required: true
