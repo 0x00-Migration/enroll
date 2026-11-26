@@ -1,3 +1,4 @@
+import copy
 import sys
 import unittest
 from pathlib import Path
@@ -22,6 +23,11 @@ class FakeGitHub:
         self.invitations = {}
         self.calls = []
         self.next_id = 100
+        self.clock = 0
+
+    def tick(self):
+        self.clock += 1
+        return self.clock
 
     def repo(self, name, template=f"{ORG}/app-template", is_template=False):
         full = f"{ORG}/{name}"
@@ -77,7 +83,7 @@ class FakeGitHub:
                 raise ApiError("POST", path, 422, "name already exists")
             self.repos[target] = self.repo(body["name"], template=full)
         elif parts[3:] == ["actions", "variables"]:
-            self.variables.setdefault(full, {})[body["name"]] = dict(body)
+            self.variables.setdefault(full, {})[body["name"]] = dict(body, updated_at=self.tick())
         elif parts[3] == "rulesets":
             self.rulesets.setdefault(full, []).append(body)
         return {}
@@ -85,7 +91,7 @@ class FakeGitHub:
     def patch(self, path, body):
         self.calls.append(("PATCH", path))
         parts = path.split("/")
-        self.variables[parts[1] + "/" + parts[2]][parts[5]] = dict(body)
+        self.variables[parts[1] + "/" + parts[2]][parts[5]] = dict(body, updated_at=self.tick())
 
     def put(self, path, body=None):
         self.calls.append(("PUT", path))
@@ -104,6 +110,10 @@ class FakeGitHub:
 
 def run(api, applicant=ALICE, app="notes"):
     return enroll.enroll(api, ORG, applicant, app, sleep=lambda _: None)
+
+
+def state(api):
+    return copy.deepcopy((api.repos, api.variables, api.rulesets, api.collaborators, api.invitations))
 
 
 class EnrollTest(unittest.TestCase):
@@ -126,6 +136,13 @@ class EnrollTest(unittest.TestCase):
         self.assertEqual(len(api.rulesets["org/app-notes-alice"]), 1)
         self.assertEqual(len(api.invitations["org/app-notes-alice"]), 1)
         self.assertEqual(sum(call == ("POST", "repos/org/app-template/generate") for call in api.calls), 1)
+
+    def test_retry_changes_nothing(self):
+        api = FakeGitHub()
+        run(api)
+        before = state(api)
+        run(api)
+        self.assertEqual(state(api), before)
 
     def test_collaborator_with_write_is_not_invited_again(self):
         api = FakeGitHub()

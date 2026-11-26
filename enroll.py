@@ -86,12 +86,17 @@ def outsiders(api, full):
     return collaborators or invitations
 
 
+def variable(api, full, name):
+    found = api.get(f"repos/{full}/actions/variables/{name}", missing_ok=True)
+    return None if found is None else found["value"]
+
+
 def set_variable(api, full, name, value):
-    path = f"repos/{full}/actions/variables/{name}"
-    if api.get(path, missing_ok=True) is None:
+    current = variable(api, full, name)
+    if current is None:
         api.post(f"repos/{full}/actions/variables", {"name": name, "value": value})
-    else:
-        api.patch(path, {"name": name, "value": value})
+    elif current != value:
+        api.patch(f"repos/{full}/actions/variables/{name}", {"name": name, "value": value})
 
 
 def bind(api, full, student, sleep):
