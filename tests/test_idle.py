@@ -85,6 +85,26 @@ class IdleTest(unittest.TestCase):
         sweep(api, LATE)
         self.assertTrue(api.repos["org/app-excalidraw-alice"]["archived"])
 
+    def test_idle_days_count_from_the_claim_of_a_warm_up_repository(self):
+        api = FakeGitHub()
+        warm_up(api, "excalidraw")
+        claim(api, "excalidraw", issue=7)
+        before = state(api)
+        issues = sweep(api, CONTEST_TIME + timedelta(days=DAYS, seconds=-1))
+        self.assertEqual((state(api), issues.comments), (before, {}))
+
+    def test_pushes_before_the_claim_do_not_count(self):
+        for count in (1, 100):
+            with self.subTest(pushes=count):
+                api = FakeGitHub()
+                warm_up(api, "excalidraw", issue=3)
+                for _ in range(count):
+                    push(api, "app-excalidraw-alice", ALICE, when=WARMUP_TIME)
+                claim(api, "excalidraw", issue=7)
+                issues = sweep(api, LATE)
+                self.assertTrue(api.repos["org/app-excalidraw-alice"]["archived"])
+                self.assertEqual(list(issues.comments), [7])
+
     def test_activity_beyond_one_page_keeps_the_claim(self):
         api = claimed()
         for _ in range(100):

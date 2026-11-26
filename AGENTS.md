@@ -39,10 +39,10 @@
   列表模式下领项目时, 如果 `<PREFIX><id>-<用户名>` 已经是自己在自由模式下建的仓库, 照样先检查 (别人是否领着、`MAX_REPOS`), 通过后在这个仓库上写 `CLAIMED_AT` 和 `PROJECT`, 接着用它.
 - 放弃: 开「放弃项目」issue, 填应用名. 机器人找 `<PREFIX><应用名>-<开 issue 的人>`, `STUDENT_ID` 是开 issue 的人才放弃, 别人一律拒绝.
   先写 `RELEASED_AT` (时间) 和 `RELEASE_REASON=gave_up`, 再归档仓库. 归档的仓库只读, 仍然公开, 不再算领着, 正式赛项目就回到列表. 放弃的人不能再领这个项目. 自由模式下也能放弃.
-- 收回: 设了变量 `IDLE_DAYS` (天数, 可以是小数) 时, `idle.py` 只在正式赛时间段里收回. 正式赛项目的仓库建好 `IDLE_DAYS` 天以后,
-  如果 GitHub 记录的仓库活动 (`GET repos/<仓库>/activity`) 里没有领取人的任何 push (任何分支, 包括 force push 和新建分支), 就写 `RELEASED_AT` 和 `RELEASE_REASON=idle`, 归档仓库, 再在领取 issue (`CLAIM_ISSUE`) 里 @ 他.
+- 收回: 设了变量 `IDLE_DAYS` (天数, 可以是小数) 时, `idle.py` 只在正式赛时间段里收回. 正式赛的领取从 `CLAIMED_AT` 起过了 `IDLE_DAYS` 天,
+  如果 GitHub 记录的仓库活动 (`GET repos/<仓库>/activity`) 里没有领取人在 `CLAIMED_AT` 以后的任何 push (任何分支, 包括 force push 和新建分支), 就写 `RELEASED_AT` 和 `RELEASE_REASON=idle`, 归档仓库, 再在领取 issue (`CLAIM_ISSUE`) 里 @ 他.
   留言失败 (issue 删了、转走了或锁了) 只在日志里记一行, 接着处理下一个领取.
-  生成仓库时机器人的 push 和维护者的 push 都不算. 领取人 push 过一次, 就永远不会因为这条被收回. 热身赛项目和自由模式建的仓库不收回, 正式赛结束后不收回, 不设 `IDLE_DAYS` 不收回.
+  生成仓库时机器人的 push、维护者的 push、`CLAIMED_AT` 以前的 push (比如热身赛时推到同一个仓库的) 都不算. 领取以后领取人 push 过一次, 就永远不会因为这条被收回. 热身赛项目和自由模式建的仓库不收回, 正式赛结束后不收回, 不设 `IDLE_DAYS` 不收回.
 - 提名: 开发者开「提名项目」issue (原项目地址、star 数、许可证、推荐理由、核心功能草稿). 维护者审核, 合适的加进列表, 在 issue 里回复.
 - 加项目: 在 `projects.json` 的 `projects` 里加一项, 运行 `python3 projects.py` 重新生成 `PROJECTS.md`, 两个文件一起提交. 例如:
 

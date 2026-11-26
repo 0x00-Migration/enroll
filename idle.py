@@ -9,24 +9,28 @@ from enroll import PREFIX, active_repos, candidates, release
 from github import ApiError, GitHub
 
 
-def pushed(api, full, player):
-    """Whether the player has pushed to any branch, by GitHub's own record of the repository's ref updates."""
-    activity = api.get(f"repos/{full}/activity?per_page=100")
-    # The endpoint pages by cursor, which the client does not follow; a full page may hide the player's push.
-    return len(activity) >= 100 or any(str((entry.get("actor") or {}).get("id")) == player for entry in activity)
+def pushed(api, full, player, since):
+    """Whether the player has pushed to any branch at or after `since`, by GitHub's own record of the repository's ref updates."""
+    activity = api.get(f"repos/{full}/activity?direction=desc&per_page=100")
+    recent = [entry for entry in activity if projects.moment(entry["timestamp"]) >= since]
+    # The endpoint pages by cursor, which the client does not follow; a full page of recent activity may hide the player's push.
+    return len(recent) >= 100 or any(str((entry.get("actor") or {}).get("id")) == player for entry in recent)
 
 
 def release_idle(api, issues, hub, org, catalog, now, days, prefix=PREFIX):
-    """Archive the contest claims older than `days` days with no push by their player; return their URLs."""
+    """Archive the contest claims recorded `days` days ago or more with no push by their player since; return their URLs."""
     contest = {project.id for project in catalog.projects.values() if not project.warmup}
     if days is None or not contest or now not in catalog.contest:
         return []
     due = timedelta(days=days)
     released = []
+    # A claim is recorded after its repository is created, so a repository younger than `days` holds no due claim.
     for repo, values in candidates(api, active_repos(api, org), prefix, contest,
                                    lambda repo: projects.moment(repo["created_at"]) + due <= now):
-        player = values.get("STUDENT_ID")
-        if values.get("PROJECT") not in contest or player is None or pushed(api, repo["full_name"], player):
+        if values.get("PROJECT") not in contest:
+            continue
+        claimed_at = projects.moment(values["CLAIMED_AT"])
+        if claimed_at + due > now or pushed(api, repo["full_name"], values["STUDENT_ID"], claimed_at):
             continue
         release(api, repo["full_name"], "idle", now)
         login = values.get("STUDENT_LOGIN")
