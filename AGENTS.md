@@ -11,10 +11,11 @@
   只许小写字母、数字和单个 `-` 连接, 最多 40 个字符 (规则是 `projects.py` 的 `APP_NAME`). 改表单里这一项的 label 要同时改 `APP_LABEL`.
 - `.github/ISSUE_TEMPLATE/give-up.yml`: 放弃表单, 标题固定为 `放弃项目`, 也用「应用名」这一项.
 - `.github/ISSUE_TEMPLATE/nominate.yml`: 提名表单, 标题默认 `提名项目: `, 机器人不理.
-  机器人只处理标题正好是 `领取仓库` 或 `放弃项目` 的 issue, 别的都不理; 表单的标题和 label 是否和代码一致, 由测试检查.
+  机器人只处理标题正好是 `领取仓库` 或 `放弃项目` 的 issue, 别的都不理; 表单的标题和 label、workflow 放进来的标题是否和代码一致, 由测试检查.
   领取表单和提名表单里 `PROJECTS.md` 的链接写死了组织 `0x00-Migration`, 换组织要一起改.
-- `.github/workflows/enroll.yml`: issue 打开时运行 `enroll.py`; 手动运行可填 issue 号重试. 整个组织的 issue 排成一队, 一次只跑一个 (concurrency 组 `enroll`), 两个人不会同时领到同一个项目.
-- `.github/workflows/idle.yml` (`Release idle claims`): 每小时运行一次 `idle.py`, 也可以手动运行; 和领取在同一个 concurrency 组里排队.
+- `.github/workflows/enroll.yml`: 标题正好是 `领取仓库` 或 `放弃项目` 的 issue 打开时运行 `enroll.py`; 手动运行可填 issue 号重试. 这些 job 排成一队, 一次只跑一个 (job 级 concurrency 组 `enroll`), 两个人不会同时领到同一个项目.
+  提名和别的 issue 不启动 job, 不占队里的位置.
+- `.github/workflows/idle.yml` (`Release idle claims`): 每小时运行一次 `idle.py`, 也可以手动运行; 和领取在同一个 job 级 concurrency 组里排队.
 - `enroll.py`: 领取和放弃, 可重复运行 (中途失败重跑会接着做, 不会重复建仓库、重复邀请或重复归档).
 - `idle.py`: 收回长时间没有 push 的正式赛项目, 见「项目列表」.
 - `projects.json`: 项目列表和两个领取时间段. `projects.py` 读它 (格式不对就报错), 也用它生成 `PROJECTS.md`.
