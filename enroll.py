@@ -234,6 +234,8 @@ def enroll(api, org, applicant, app, mates=(), template=TEMPLATE, prefix=PREFIX,
         raise RuntimeError(f"{full} redirects to {repo['full_name']}; left for a maintainer.")
     if (repo.get("template_repository") or {}).get("full_name", "").lower() != template.lower():
         raise RuntimeError(f"{full} exists but was not generated from {template}; left for a maintainer.")
+    if repo["archived"]:
+        raise Refusal(f"仓库 {full} 已归档, 不能再领. 请换一个应用名; 要恢复这个仓库请联系维护者.")
 
     bind(api, full, student, sleep)
     set_variable(api, full, "APP_NAME", app)

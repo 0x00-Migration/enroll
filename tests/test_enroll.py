@@ -427,6 +427,15 @@ class TeamTest(unittest.TestCase):
         self.assertEqual(recorded_team(api, "app-notes-alice"), ("1,11", "alice,bob", "@alice @bob"))
         self.assertEqual(invitees(api, "app-old-alice"), {1, 13})
 
+    def test_archived_repository_is_not_resumed(self):
+        api = FakeGitHub()
+        run(api, mates=["bob"])
+        api.repos["org/app-notes-alice"]["archived"] = True
+        before = state(api)
+        with self.assertRaises(enroll.Refusal):
+            run(api, mates=["carol"])
+        self.assertEqual(state(api), before)
+
     def test_repository_from_before_teams_counts_as_the_captain_alone(self):
         api = FakeGitHub()
         run(api, app="notes")
