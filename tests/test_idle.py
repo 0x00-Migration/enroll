@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import idle  # noqa: E402
 import projects  # noqa: E402
 from test_enroll import (ALICE, BEIJING, BOB, BOT, CATALOG, CONTEST_TIME, ORG, WARMUP_TIME,  # noqa: E402
-                         FakeGitHub, FakeIssues, claim, github_time, state)
+                         FakeGitHub, FakeIssues, claim, github_time, state, warm_up)
 
 DAYS = 2
 LATE = CONTEST_TIME + timedelta(days=DAYS, hours=1)
@@ -104,6 +104,13 @@ class IdleTest(unittest.TestCase):
         api = FakeGitHub()
         api.now = WARMUP_TIME
         claim(api, "hello", now=WARMUP_TIME, issue=7)
+        before = state(api)
+        issues = sweep(api, LATE)
+        self.assertEqual((state(api), issues.comments), (before, {}))
+
+    def test_free_mode_repositories_are_never_released(self):
+        api = FakeGitHub()
+        warm_up(api, "excalidraw", issue=3)
         before = state(api)
         issues = sweep(api, LATE)
         self.assertEqual((state(api), issues.comments), (before, {}))

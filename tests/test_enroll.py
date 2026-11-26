@@ -166,7 +166,14 @@ EMPTY = projects.parse(listing())
 
 
 def claim(api, project, applicant=ALICE, now=CONTEST_TIME, **options):
-    return enroll.enroll(api, ORG, applicant, project, sleep=lambda _: None, catalog=CATALOG, now=now, **options)
+    return enroll.enroll(api, ORG, applicant, project, sleep=lambda _: None, catalog=CATALOG, now=now, clock=lambda: api.now, **options)
+
+
+def warm_up(api, app, applicant=ALICE, issue=None):
+    """A repository the player made in free mode during the warm-up, before the list had projects."""
+    api.now = WARMUP_TIME
+    enroll.enroll(api, ORG, applicant, app, sleep=lambda _: None, issue=issue)
+    api.now = CONTEST_TIME
 
 
 def form(app):
@@ -319,7 +326,8 @@ class ListModeTest(unittest.TestCase):
         api = FakeGitHub()
         self.assertEqual(claim(api, "excalidraw", issue=7), ("https://github.com/org/app-excalidraw-alice", "invited"))
         variables = {name: variable["value"] for name, variable in api.variables["org/app-excalidraw-alice"].items()}
-        self.assertEqual(variables, {"STUDENT_ID": "1", "STUDENT_LOGIN": "alice", "APP_NAME": "excalidraw", "CLAIM_ISSUE": "7"})
+        self.assertEqual(projects.moment(variables.pop("CLAIMED_AT")), CONTEST_TIME)
+        self.assertEqual(variables, {"STUDENT_ID": "1", "STUDENT_LOGIN": "alice", "PROJECT": "excalidraw", "APP_NAME": "excalidraw", "CLAIM_ISSUE": "7"})
 
     def test_id_not_in_the_list_is_refused(self):
         api = FakeGitHub()
@@ -394,14 +402,49 @@ class ExclusiveTest(unittest.TestCase):
         claim(api, "foo")
         self.assertIn("org/app-foo-alice", api.repos)
 
-    def test_claim_that_stopped_before_recording_its_project_still_holds_it(self):
+    def test_claim_that_stopped_before_recording_its_project_does_not_hold_it(self):
         api = FakeGitHub()
         api.repos["org/app-excalidraw-bob"] = api.repo("app-excalidraw-bob", description="@bob")
+        claim(api, "excalidraw")
+        before = state(api)
+        with self.assertRaises(enroll.Refusal):
+            claim(api, "excalidraw", BOB)
+        self.assertEqual(state(api), before)
+
+    def test_warm_up_repository_does_not_hold_a_contest_project(self):
+        api = FakeGitHub()
+        warm_up(api, "excalidraw")
+        self.assertEqual(claim(api, "excalidraw", BOB)[0], "https://github.com/org/app-excalidraw-bob")
+
+    def test_warm_up_repository_is_checked_like_a_new_claim(self):
+        api = FakeGitHub()
+        claim(api, "excalidraw", BOB)
+        warm_up(api, "excalidraw")
+        before = state(api)
         with self.assertRaises(enroll.Refusal):
             claim(api, "excalidraw")
-        self.assertNotIn("org/app-excalidraw-alice", api.repos)
-        claim(api, "excalidraw", BOB)
-        self.assertEqual(api.variables["org/app-excalidraw-bob"]["APP_NAME"]["value"], "excalidraw")
+        self.assertEqual(state(api), before)
+
+    def test_owner_claims_their_warm_up_repository_for_the_contest(self):
+        api = FakeGitHub()
+        warm_up(api, "excalidraw", issue=3)
+        self.assertEqual(claim(api, "excalidraw", issue=7)[0], "https://github.com/org/app-excalidraw-alice")
+        variables = api.variables["org/app-excalidraw-alice"]
+        self.assertEqual(variables["PROJECT"]["value"], "excalidraw")
+        self.assertEqual(projects.moment(variables["CLAIMED_AT"]["value"]), CONTEST_TIME)
+        self.assertEqual(sum(call == ("POST", "repos/org/app-template/generate") for call in api.calls), 1)
+        with self.assertRaises(enroll.Refusal):
+            claim(api, "excalidraw", BOB)
+
+    def test_max_repos_counts_contest_claims_but_not_warm_up_repositories(self):
+        api = FakeGitHub()
+        warm_up(api, "excalidraw")
+        warm_up(api, "obsidian")
+        claim(api, "foo", max_repos=1)
+        before = state(api)
+        with self.assertRaises(enroll.Refusal):
+            claim(api, "excalidraw", max_repos=1)
+        self.assertEqual(state(api), before)
 
     def test_max_repos_limits_the_contest_projects_held_at_once(self):
         api = FakeGitHub()

@@ -5,6 +5,7 @@ import os
 import re
 import sys
 import time
+from datetime import datetime, timezone
 
 import projects
 from github import ApiError, GitHub, eventually
@@ -65,8 +66,7 @@ def candidates(api, repos, prefix, ids, keep=lambda repo: True):
 def check_available(api, org, prefix, catalog, student, project, max_repos):
     repos = active_repos(api, org)
     for repo, values in candidates(api, repos, prefix, [project.id]):
-        # A claim that stopped before writing APP_NAME still holds the project.
-        if values.get("APP_NAME") in (None, project.id) and values.get("STUDENT_ID") != str(student["id"]):
+        if values.get("PROJECT") == project.id and values.get("STUDENT_ID") != str(student["id"]):
             raise Refusal(f"正式赛项目 `{project.id}` 现在归别人 ({repo['html_url']}), 同一时间一个项目只归一个人. "
                           "他放弃或者项目被收回以后, 项目会回到列表. 请换一个项目, 从领取页面重新开一个 issue.")
     if max_repos is None:
@@ -74,7 +74,7 @@ def check_available(api, org, prefix, catalog, student, project, max_repos):
     contest = {listed.id for listed in catalog.projects.values() if not listed.warmup}
     suffix = "-" + student["login"].lower()
     mine = [repo["html_url"] for repo, values in candidates(api, repos, prefix, contest, lambda repo: repo["name"].lower().endswith(suffix))
-            if values.get("STUDENT_ID") == str(student["id"]) and values.get("APP_NAME") in contest]
+            if values.get("STUDENT_ID") == str(student["id"]) and values.get("PROJECT") in contest]
     if len(mine) >= max_repos:
         raise Refusal(f"每人同一时间最多做 {max_repos} 个正式赛项目, 你在做: {' '.join(mine)}. "
                       "要换项目, 先开「放弃项目」issue 交还一个, 再从领取页面重新开一个 issue.")
@@ -163,7 +163,7 @@ def grant(api, full, student):
 
 
 def enroll(api, org, applicant, app, template=TEMPLATE, prefix=PREFIX, sleep=time.sleep,
-           catalog=None, now=None, max_repos=None, issue=None):
+           catalog=None, now=None, max_repos=None, issue=None, clock=lambda: datetime.now(timezone.utc)):
     project = None if catalog is None else find_project(catalog, app, now)
     student = api.get("users/" + applicant["login"], missing_ok=True)
     if student is None or student["id"] != applicant["id"]:
@@ -175,9 +175,10 @@ def enroll(api, org, applicant, app, template=TEMPLATE, prefix=PREFIX, sleep=tim
     name = f"{prefix}{app}-{student['login']}"
     full = f"{org}/{name}"
     repo = api.get("repos/" + full, missing_ok=True)
+    recorded = project is not None and repo is not None and variables(api, full).get("PROJECT") == project.id
+    if project is not None and not project.warmup and not recorded:
+        check_available(api, org, prefix, catalog, student, project, max_repos)
     if repo is None:
-        if project is not None and not project.warmup:
-            check_available(api, org, prefix, catalog, student, project, max_repos)
         check_template(api, template)
         repo = create(api, org, template, name, "@" + student["login"], sleep)
     if repo["full_name"].lower() != full.lower():
@@ -188,6 +189,10 @@ def enroll(api, org, applicant, app, template=TEMPLATE, prefix=PREFIX, sleep=tim
         raise Refusal(f"仓库 {repo['html_url']} 已归档 (放弃了, 或者领取后一直没有 push 被收回), 不能再领. 请换一个应用名; 要恢复这个仓库请联系维护者.")
 
     bind(api, full, student, sleep)
+    if project is not None and not recorded:
+        # PROJECT marks the claim as recorded, so it goes last: a run that stops before it is checked again on retry.
+        set_variable(api, full, "CLAIMED_AT", clock().isoformat(timespec="seconds"))
+        set_variable(api, full, "PROJECT", project.id)
     set_variable(api, full, "APP_NAME", app)
     if issue is not None:
         set_variable(api, full, "CLAIM_ISSUE", str(issue))
