@@ -143,15 +143,19 @@ class FakeGitHub:
 
 
 class FakeIssues:
-    def __init__(self, issue=None):
+    def __init__(self, issue=None, gone=()):
         self.issue = issue
+        self.gone = set(gone)
         self.comments = {}
 
     def get(self, path):
         return self.issue
 
     def post(self, path, body):
-        self.comments.setdefault(int(path.split("/")[4]), []).append(body["body"])
+        number = int(path.split("/")[4])
+        if number in self.gone:
+            raise ApiError("POST", path, 404, "Not Found")
+        self.comments.setdefault(number, []).append(body["body"])
 
     def patch(self, path, body):
         self.issue.update(body)

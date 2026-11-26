@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 import projects
 from enroll import PREFIX, active_repos, candidates, release
-from github import GitHub
+from github import ApiError, GitHub
 
 
 def pushed(api, full, player):
@@ -30,13 +30,16 @@ def release_idle(api, issues, hub, org, catalog, now, days, prefix=PREFIX):
             continue
         release(api, repo["full_name"], "idle", now)
         login = values.get("STUDENT_LOGIN")
-        if values.get("CLAIM_ISSUE"):
-            issues.post(f"repos/{hub}/issues/{values['CLAIM_ISSUE']}/comments", {"body": (
-                f"@{login} 你领的正式赛项目 `{values['PROJECT']}` 领取后 {days:g} 天内没有任何 push, 已经收回: "
-                f"仓库 {repo['html_url']} 已归档, 保持公开, 不能再推送. 项目回到了列表, 别人可以领. "
-                "想接着参加, 请换一个项目重新领; 有疑问请联系维护者.\n")})
         print(f"Released {repo['html_url']} of {login}: no push in {days:g} days")
         released.append(repo["html_url"])
+        if values.get("CLAIM_ISSUE"):
+            try:
+                issues.post(f"repos/{hub}/issues/{values['CLAIM_ISSUE']}/comments", {"body": (
+                    f"@{login} 你领的正式赛项目 `{values['PROJECT']}` 领取后 {days:g} 天内没有任何 push, 已经收回: "
+                    f"仓库 {repo['html_url']} 已归档, 保持公开, 不能再推送. 项目回到了列表, 别人可以领. "
+                    "想接着参加, 请换一个项目重新领; 有疑问请联系维护者.\n")})
+            except ApiError as error:
+                print(f"Could not tell {login} on issue #{values['CLAIM_ISSUE']}: {error}")
     return released
 
 

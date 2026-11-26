@@ -128,6 +128,18 @@ class IdleTest(unittest.TestCase):
         issues = sweep(api, LATE + timedelta(hours=1))
         self.assertEqual((state(api), issues.comments), (before, {}))
 
+    def test_claim_whose_issue_is_gone_is_released_and_the_sweep_goes_on(self):
+        api = claimed()
+        claim(api, "obsidian", BOB, issue=8)
+        issues = FakeIssues(gone={7})
+        log = io.StringIO()
+        with contextlib.redirect_stdout(log):
+            idle.release_idle(api, issues, f"{ORG}/enroll", ORG, CATALOG, LATE, DAYS)
+        self.assertTrue(api.repos["org/app-excalidraw-alice"]["archived"])
+        self.assertTrue(api.repos["org/app-obsidian-bob"]["archived"])
+        self.assertEqual(list(issues.comments), [8])
+        self.assertIn("#7", log.getvalue())
+
     def test_claim_without_an_issue_is_released_silently(self):
         api = FakeGitHub()
         claim(api, "excalidraw")
