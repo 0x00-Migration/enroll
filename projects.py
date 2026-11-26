@@ -59,6 +59,10 @@ class Catalog:
     def window(self, project):
         return self.warmup if project.warmup else self.contest
 
+    def lists(self, warmup):
+        """Whether the list names projects of the warm-up, or of the contest; a phase that names none is claimed freely."""
+        return any(project.warmup == warmup for project in self.projects.values())
+
 
 def parse_window(data, key):
     opens, closes = moment(data[key]["opens"]), moment(data[key]["closes"])

@@ -35,6 +35,11 @@ def app_name(body):
 
 
 def find_project(catalog, app, now):
+    """The listed project the claim takes, or None for a free claim: one made inside the window of a phase the list names
+    no projects for, so that contest projects can be published while the warm-up is still claimed freely."""
+    for warmup, window in ((True, catalog.warmup), (False, catalog.contest)):
+        if now in window and not catalog.lists(warmup):
+            return None
     project = catalog.projects.get(app)
     if project is None:
         raise Refusal(f"`{app}` 不在项目列表 (本仓库的 `PROJECTS.md`) 里, 应用名要填列表里的项目 id. 请从领取页面重新开一个 issue.")
@@ -254,12 +259,15 @@ def claim_issue(api, org, issue):
     login = issue["user"]["login"]
     catalog = projects.load()
     listed = catalog if catalog.projects else None
-    limit = None if listed is None else projects.max_repos(os.environ.get("MAX_REPOS"))
+    now = opened_at(issue)
+    project = None if listed is None else find_project(listed, app, now)
+    contest = project is not None and not project.warmup
+    limit = projects.max_repos(os.environ.get("MAX_REPOS")) if contest else None
     url, access = enroll(api, org, issue["user"], app, os.environ.get("TEMPLATE") or TEMPLATE, os.environ.get("PREFIX") or PREFIX,
-                         catalog=listed, now=opened_at(issue), max_repos=limit, issue=issue["number"])
+                         catalog=listed, now=now, max_repos=limit, issue=issue["number"])
     print(f"Enrolled {login}: {url} ({access})")
     note = None
-    if listed is not None and not listed.projects[app].warmup:
+    if contest:
         try:
             days = projects.idle_days(os.environ.get("IDLE_DAYS"))
         except ValueError as error:

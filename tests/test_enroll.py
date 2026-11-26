@@ -5,7 +5,7 @@ import os
 import re
 import sys
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -608,6 +608,20 @@ class IssueTest(unittest.TestCase):
         self.assertNotIn("org/app-obsidian-alice", api.repos)
         self.assertEqual(open_issue(api, form("obsidian"), catalog=CATALOG, MAX_REPOS="").issue["state_reason"], "completed")
         self.assertIn("org/app-obsidian-alice", api.repos)
+
+    def test_warm_up_claims_stay_free_while_the_list_names_only_contest_projects(self):
+        catalog = projects.parse(listing(entry("excalidraw"), entry("obsidian")))
+        api = FakeGitHub()
+        for app in ("my-notes", "excalidraw"):
+            with self.subTest(app=app):
+                issues = open_issue(api, form(app), opened=WARMUP_TIME, catalog=catalog, MAX_REPOS="lots", IDLE_DAYS="2")
+                self.assertEqual(issues.issue["state_reason"], "completed")
+                self.assertNotIn("PROJECT", api.variables[f"org/app-{app}-alice"])
+                self.assertNotIn("只归你", issues.comments[7][0])
+        gap = catalog.warmup.closes + timedelta(hours=1)
+        self.assertEqual(open_issue(api, form("notes"), opened=gap, catalog=catalog).issue["state_reason"], "not_planned")
+        open_issue(api, form("excalidraw"), user=BOB, catalog=catalog)
+        self.assertEqual(api.variables["org/app-excalidraw-bob"]["PROJECT"]["value"], "excalidraw")
 
     def test_free_mode_claims_ignore_max_repos(self):
         api = FakeGitHub()
