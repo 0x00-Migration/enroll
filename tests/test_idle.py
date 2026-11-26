@@ -174,6 +174,25 @@ class IdleTest(unittest.TestCase):
         sweep(api, restored + timedelta(days=DAYS, hours=1))
         self.assertTrue(api.repos[full]["archived"])
 
+    def test_claim_with_a_broken_claimed_at_is_skipped_and_the_sweep_fails_after_the_others(self):
+        for broken in ("2026-12-03 10:00", None):
+            with self.subTest(CLAIMED_AT=broken):
+                api = claimed()
+                claim(api, "obsidian", BOB, issue=8)
+                full = "org/app-excalidraw-alice"
+                if broken is None:
+                    del api.variables[full]["CLAIMED_AT"]
+                else:
+                    api.variables[full]["CLAIMED_AT"]["value"] = broken
+                issues = FakeIssues()
+                log = io.StringIO()
+                with contextlib.redirect_stdout(log), self.assertRaises(ValueError) as failure:
+                    idle.release_idle(api, issues, f"{ORG}/enroll", ORG, CATALOG, LATE, DAYS)
+                self.assertFalse(api.repos[full]["archived"])
+                self.assertTrue(api.repos["org/app-obsidian-bob"]["archived"])
+                self.assertEqual(list(issues.comments), [8])
+                self.assertIn("https://github.com/org/app-excalidraw-alice", str(failure.exception))
+
     def test_claim_without_an_issue_is_released_silently(self):
         api = FakeGitHub()
         claim(api, "excalidraw")

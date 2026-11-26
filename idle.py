@@ -24,12 +24,19 @@ def release_idle(api, issues, hub, org, catalog, now, days, prefix=PREFIX):
         return []
     due = timedelta(days=days)
     released = []
+    broken = []
     # A claim is recorded after its repository is created, so a repository younger than `days` holds no due claim.
     for repo, values in candidates(api, active_repos(api, org), prefix, contest,
                                    lambda repo: projects.moment(repo["created_at"]) + due <= now):
         if values.get("PROJECT") not in contest:
             continue
-        claimed_at = projects.moment(values["CLAIMED_AT"])
+        try:
+            claimed_at = projects.moment(values["CLAIMED_AT"])
+        except (KeyError, ValueError) as error:
+            # A maintainer edits CLAIMED_AT by hand on a restore; one mistake must not hold back the other claims.
+            print(f"Skipped {repo['html_url']}: CLAIMED_AT {values.get('CLAIMED_AT')!r} is not a time with a UTC offset ({error!r})")
+            broken.append(repo["html_url"])
+            continue
         if claimed_at + due > now or pushed(api, repo["full_name"], values["STUDENT_ID"], claimed_at):
             continue
         release(api, repo["full_name"], "idle", now)
@@ -44,6 +51,8 @@ def release_idle(api, issues, hub, org, catalog, now, days, prefix=PREFIX):
                     "想接着参加, 请换一个项目重新领; 有疑问请联系维护者.\n")})
             except ApiError as error:
                 print(f"Could not tell {login} on issue #{values['CLAIM_ISSUE']}: {error}")
+    if broken:
+        raise ValueError("Set CLAIMED_AT like 2026-12-03T10:00:00+08:00 on these claims, which were not checked: " + " ".join(broken))
     return released
 
 
