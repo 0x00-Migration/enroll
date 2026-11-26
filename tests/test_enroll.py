@@ -447,6 +447,28 @@ class TeamTest(unittest.TestCase):
         with self.assertRaises(enroll.Refusal):
             run(api, mates=["mallory"])
 
+    def test_max_repos_limits_new_repositories_but_not_claims_on_existing_ones(self):
+        api = FakeGitHub()
+        run(api, app="notes", max_repos=2)
+        run(api, app="todo", mates=["bob"], max_repos=2)
+        before = state(api)
+        with self.assertRaises(enroll.Refusal):
+            run(api, app="chat", max_repos=2)
+        self.assertEqual(state(api), before)
+        run(api, app="notes", mates=["carol"], max_repos=2)
+        self.assertEqual(invitees(api, "app-notes-alice"), {1, 11, 12})
+        api.repos["org/app-todo-alice"]["archived"] = True
+        run(api, app="chat", max_repos=2)
+        self.assertIn("org/app-chat-alice", api.repos)
+
+    def test_max_repos_is_read_from_the_environment(self):
+        api = FakeGitHub()
+        open_issue(api, form(app="notes"), MAX_REPOS="1")
+        self.assertEqual(open_issue(api, form(app="todo"), MAX_REPOS="1").issue["state_reason"], "not_planned")
+        self.assertNotIn("org/app-todo-alice", api.repos)
+        self.assertEqual(open_issue(api, form(app="todo"), MAX_REPOS="").issue["state_reason"], "completed")
+        self.assertIn("org/app-todo-alice", api.repos)
+
     def test_run_that_stops_halfway_already_holds_the_new_teammate(self):
         api = FakeGitHub()
         post = api.post

@@ -206,7 +206,7 @@ def record(api, repo, team):
     set_variable(api, full, "MEMBER_LOGINS", ",".join(user["login"] for user in team))
 
 
-def enroll(api, org, applicant, app, mates=(), template=TEMPLATE, prefix=PREFIX, sleep=time.sleep):
+def enroll(api, org, applicant, app, mates=(), template=TEMPLATE, prefix=PREFIX, max_repos=None, sleep=time.sleep):
     student = api.get("users/" + applicant["login"], missing_ok=True)
     if student is None or student["id"] != applicant["id"]:
         raise Refusal("提交 issue 之后 GitHub 用户名变了. 请用现在的账号重新开一个 issue.")
@@ -226,6 +226,8 @@ def enroll(api, org, applicant, app, mates=(), template=TEMPLATE, prefix=PREFIX,
     full = f"{org}/{name}"
     repo = api.get("repos/" + full, missing_ok=True)
     if repo is None:
+        if max_repos is not None and len(own) >= max_repos:
+            raise Refusal(f"每个队最多领 {max_repos} 个仓库, 你的队已经领满了. 要加队友, 请用已有的应用名重新开一个 issue.")
         check_template(api, template)
         repo = create(api, org, template, name, "@" + student["login"], sleep)
     if repo["full_name"].lower() != full.lower():
@@ -286,8 +288,10 @@ def main():
     try:
         app = app_name(issue.get("body"))
         mates = teammates(issue.get("body"), login)
+        limit = os.environ.get("MAX_REPOS")
         url, pending = enroll(api, org, issue["user"], app, mates,
-                              os.environ.get("TEMPLATE") or TEMPLATE, os.environ.get("PREFIX") or PREFIX)
+                              os.environ.get("TEMPLATE") or TEMPLATE, os.environ.get("PREFIX") or PREFIX,
+                              int(limit) if limit else None)
     except Refusal as refusal:
         issues.post(path + "/comments", {"body": f"@{login} 领取没有成功: {refusal}"})
         issues.patch(path, {"state": "closed", "state_reason": "not_planned"})
