@@ -1,0 +1,27 @@
+name: 放弃项目
+description: 交还你领的项目, 仓库会归档 (只读, 仍然公开)
+title: 放弃项目
+body:
+  - type: markdown
+    attributes:
+      value: |
+        点 **Create** 提交即可, 机器人会在一两分钟内回复.
+
+        - 机器人把你这个项目的仓库归档: 仓库保持公开, 但谁都不能再推送, 你也不能再领这个项目.
+        - 项目列表里的正式赛项目会回到列表, 别人可以领.
+        - 只有领取人自己能放弃. 不要改这个 issue 的标题.
+  - type: input
+    id: app
+    attributes:
+      label: 应用名
+      description: 领取时填的应用名 (项目 id), 也就是仓库名 `app-<应用名>-<你的 GitHub 用户名>` 中间那段.
+      placeholder: markdown-editor
+    validations:
+      required: true
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: 确认
+      options:
+        - label: 我知道放弃以后不能再往这个仓库推送, 也不能再领这个项目
+          required: true

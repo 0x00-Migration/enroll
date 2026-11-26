@@ -1,4 +1,4 @@
-"""Create an applicant's repository from the template when they open an enrollment issue."""
+"""Create an applicant's repository from the template when they open an enrollment issue, and archive it when they give it up."""
 
 import json
 import os
@@ -11,6 +11,7 @@ from github import ApiError, GitHub, eventually
 from projects import APP_NAME, APP_NAME_MAX
 
 TITLE = "领取仓库"
+GIVE_UP_TITLE = "放弃项目"
 TEMPLATE = "app-template"
 PREFIX = "app-"
 RULESET = "history"
@@ -194,6 +195,25 @@ def enroll(api, org, applicant, app, template=TEMPLATE, prefix=PREFIX, sleep=tim
     return repo["html_url"], grant(api, full, student)
 
 
+def release(api, full, reason, now):
+    """Return a claim to the list: record when and why, then archive the repository, which stays public."""
+    set_variable(api, full, "RELEASED_AT", now.isoformat())
+    set_variable(api, full, "RELEASE_REASON", reason)
+    api.patch("repos/" + full, {"archived": True})
+
+
+def give_up(api, org, opener, app, now, prefix=PREFIX):
+    """Release the opener's claim on the app; return its URL and whether this run archived it."""
+    repo = api.get(f"repos/{org}/{prefix}{app}-{opener['login']}", missing_ok=True)
+    values = {} if repo is None else variables(api, repo["full_name"])
+    if values.get("STUDENT_ID") != str(opener["id"]):
+        raise Refusal(f"你没有领过 `{app}`: 只有领取人自己能放弃, 应用名要填领取时填的那个. 领取后改过 GitHub 用户名的, 请联系维护者.")
+    if repo["archived"]:
+        return repo["html_url"], False
+    release(api, repo["full_name"], "gave_up", now)
+    return repo["html_url"], True
+
+
 def success_message(login, url, access):
     steps = [] if access == "write" else [f"接受邀请: {url}/invitations (7 天内有效; 过期了重新开一个 issue 即可)"]
     steps += [
@@ -217,6 +237,31 @@ def load_issue(hub, issues):
         return json.load(event)["issue"]
 
 
+def claim_issue(api, org, issue):
+    app = app_name(issue.get("body"))
+    login = issue["user"]["login"]
+    catalog = projects.load()
+    limit = os.environ.get("MAX_REPOS")
+    url, access = enroll(api, org, issue["user"], app, os.environ.get("TEMPLATE") or TEMPLATE, os.environ.get("PREFIX") or PREFIX,
+                         catalog=catalog if catalog.projects else None, now=opened_at(issue),
+                         max_repos=int(limit) if limit else None, issue=issue["number"])
+    print(f"Enrolled {login}: {url} ({access})")
+    return success_message(login, url, access)
+
+
+def give_up_issue(api, org, issue):
+    app = app_name(issue.get("body"))
+    login = issue["user"]["login"]
+    url, released = give_up(api, org, issue["user"], app, opened_at(issue), os.environ.get("PREFIX") or PREFIX)
+    print(f"{login} gave up {url}" if released else f"{url} was archived already")
+    if not released:
+        return f"@{login} 仓库 {url} 已经归档了, 不用再放弃.\n"
+    return f"@{login} 已放弃 `{app}`: 仓库 {url} 已归档, 保持公开, 谁都不能再推送. 想做别的, 从领取页面重新开一个 issue.\n"
+
+
+ROUTES = {TITLE: (claim_issue, "没有创建仓库"), GIVE_UP_TITLE: (give_up_issue, "放弃没有成功")}
+
+
 def main():
     hub = os.environ["GITHUB_REPOSITORY"]
     org = os.environ["GITHUB_REPOSITORY_OWNER"]
@@ -227,27 +272,23 @@ def main():
         return 0
     path = f"repos/{hub}/issues/{issue['number']}"
     login = issue["user"]["login"]
-    if issue["title"].strip() != TITLE:
+    route = ROUTES.get(issue["title"].strip())
+    if route is None:
         print("Not an enrollment issue; ignored.")
         return 0
+    handle, failure = route
     try:
-        app = app_name(issue.get("body"))
-        catalog = projects.load()
-        limit = os.environ.get("MAX_REPOS")
-        url, access = enroll(api, org, issue["user"], app, os.environ.get("TEMPLATE") or TEMPLATE, os.environ.get("PREFIX") or PREFIX,
-                             catalog=catalog if catalog.projects else None, now=opened_at(issue),
-                             max_repos=int(limit) if limit else None, issue=issue["number"])
+        reply = handle(api, org, issue)
     except Refusal as refusal:
-        issues.post(path + "/comments", {"body": f"@{login} 没有创建仓库: {refusal}"})
+        issues.post(path + "/comments", {"body": f"@{login} {failure}: {refusal}"})
         issues.patch(path, {"state": "closed", "state_reason": "not_planned"})
         print("Refused: " + str(refusal))
         return 0
     except Exception:
         issues.post(path + "/comments", {"body": f"@{login} 处理时出错, 维护者会查看并重试, 请先不要重复提交."})
         raise
-    issues.post(path + "/comments", {"body": success_message(login, url, access)})
+    issues.post(path + "/comments", {"body": reply})
     issues.patch(path, {"state": "closed", "state_reason": "completed"})
-    print(f"Enrolled {login}: {url} ({access})")
     return 0
 
 

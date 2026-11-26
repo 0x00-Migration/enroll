@@ -42,6 +42,10 @@ class FakeGitHub:
     def missing(self, method, path):
         raise ApiError(method, path, 404, "Not Found")
 
+    def writable(self, method, path, full):
+        if self.repos[full]["archived"]:
+            raise ApiError(method, path, 403, "Repository was archived so is read-only.")
+
     def get(self, path, missing_ok=False):
         self.calls.append(("GET", path))
         parts = path.split("?")[0].split("/")
@@ -92,6 +96,7 @@ class FakeGitHub:
                 raise ApiError("POST", path, 422, "name already exists")
             self.repos[target] = self.repo(body["name"], template=full, description=body["description"])
         elif parts[3:] == ["actions", "variables"]:
+            self.writable("POST", path, full)
             self.variables.setdefault(full, {})[body["name"]] = dict(body)
         elif parts[3] == "rulesets":
             self.rulesets.setdefault(full, []).append(body)
@@ -100,7 +105,12 @@ class FakeGitHub:
     def patch(self, path, body):
         self.calls.append(("PATCH", path))
         parts = path.split("/")
-        self.variables[parts[1] + "/" + parts[2]][parts[5]] = dict(body)
+        full = parts[1] + "/" + parts[2]
+        if len(parts) == 3:
+            self.repos[full].update(body)
+            return
+        self.writable("PATCH", path, full)
+        self.variables[full][parts[5]] = dict(body)
 
     def put(self, path, body=None):
         self.calls.append(("PUT", path))
@@ -153,6 +163,10 @@ def claim(api, project, applicant=ALICE, now=CONTEST_TIME, **options):
 
 def form(app):
     return f"### 应用名\n\n{app}\n\n### 确认\n\n- [X] 我用的是自己的个人 GitHub 账号, 并同意作品以公开仓库的形式提交"
+
+
+def give_up_form(app):
+    return f"### 应用名\n\n{app}\n\n### 确认\n\n- [X] 我知道放弃以后不能再往这个仓库推送, 也不能再领这个项目"
 
 
 def open_issue(api, body, title=enroll.TITLE, user=ALICE, opened=CONTEST_TIME, catalog=EMPTY, **env):
@@ -404,6 +418,60 @@ class ExclusiveTest(unittest.TestCase):
         self.assertLessEqual({"org/app-excalidraw-alice", "org/app-obsidian-alice", "org/app-foo-alice"}, set(api.repos))
 
 
+class GiveUpTest(unittest.TestCase):
+    def test_owner_gives_up_and_the_project_returns_to_the_list(self):
+        api = FakeGitHub()
+        claim(api, "excalidraw")
+        self.assertEqual(enroll.give_up(api, ORG, ALICE, "excalidraw", CONTEST_TIME), ("https://github.com/org/app-excalidraw-alice", True))
+        self.assertTrue(api.repos["org/app-excalidraw-alice"]["archived"])
+        variables = api.variables["org/app-excalidraw-alice"]
+        self.assertEqual(variables["RELEASE_REASON"]["value"], "gave_up")
+        self.assertEqual(projects.moment(variables["RELEASED_AT"]["value"]), CONTEST_TIME)
+        claim(api, "excalidraw", BOB)
+        self.assertIn("org/app-excalidraw-bob", api.repos)
+        with self.assertRaises(enroll.Refusal):
+            claim(api, "excalidraw")
+
+    def test_only_the_owner_can_give_a_project_up(self):
+        api = FakeGitHub()
+        api.users["bar-baz"] = {"login": "bar-baz", "id": 5, "type": "User"}
+        claim(api, "excalidraw")
+        claim(api, "foo", api.users["bar-baz"])
+        before = state(api)
+        new_alice = {"login": "alice", "id": 99, "type": "User"}
+        for opener, app in [(MALLORY, "excalidraw"), (new_alice, "excalidraw"), ({"login": "baz", "id": 6, "type": "User"}, "foo-bar")]:
+            with self.subTest(opener=opener["login"], id=opener["id"]), self.assertRaises(enroll.Refusal):
+                enroll.give_up(api, ORG, opener, app, CONTEST_TIME)
+        self.assertEqual(state(api), before)
+
+    def test_giving_up_twice_changes_nothing(self):
+        api = FakeGitHub()
+        claim(api, "excalidraw")
+        enroll.give_up(api, ORG, ALICE, "excalidraw", CONTEST_TIME)
+        before = state(api)
+        later = datetime(2026, 12, 3, tzinfo=BEIJING)
+        self.assertEqual(enroll.give_up(api, ORG, ALICE, "excalidraw", later), ("https://github.com/org/app-excalidraw-alice", False))
+        self.assertEqual(state(api), before)
+
+    def test_give_up_that_stopped_before_archiving_finishes_on_retry(self):
+        api = FakeGitHub()
+        claim(api, "excalidraw")
+        patch = api.patch
+
+        def patch_without_archiving(path, body):
+            if "archived" in body:
+                raise ApiError("PATCH", path, 500, "stopped")
+            return patch(path, body)
+
+        api.patch = patch_without_archiving
+        with self.assertRaises(ApiError):
+            enroll.give_up(api, ORG, ALICE, "excalidraw", CONTEST_TIME)
+        api.patch = patch
+        self.assertEqual(enroll.give_up(api, ORG, ALICE, "excalidraw", CONTEST_TIME)[1], True)
+        self.assertTrue(api.repos["org/app-excalidraw-alice"]["archived"])
+        self.assertEqual(api.variables["org/app-excalidraw-alice"]["RELEASE_REASON"]["value"], "gave_up")
+
+
 class IssueTest(unittest.TestCase):
     def test_free_name_is_accepted_while_the_list_is_empty(self):
         api = FakeGitHub()
@@ -420,6 +488,41 @@ class IssueTest(unittest.TestCase):
         self.assertIn("2026-12-01 00:00 到 2026-12-07 23:59 (北京时间)", reply)
         self.assertEqual(issues.issue["state_reason"], "not_planned")
         self.assertNotIn("org/app-excalidraw-alice", api.repos)
+
+    def test_give_up_issue_archives_the_repository_and_replies(self):
+        api = FakeGitHub()
+        open_issue(api, form("notes"))
+        issues = open_issue(api, give_up_form("notes"), title=enroll.GIVE_UP_TITLE)
+        self.assertTrue(api.repos["org/app-notes-alice"]["archived"])
+        self.assertEqual(issues.issue["state_reason"], "completed")
+        self.assertIn("https://github.com/org/app-notes-alice", issues.comments[7][0])
+
+    def test_give_up_by_someone_else_is_refused_on_the_issue(self):
+        api = FakeGitHub()
+        open_issue(api, form("notes"))
+        issues = open_issue(api, give_up_form("notes"), title=enroll.GIVE_UP_TITLE, user=MALLORY)
+        self.assertTrue(issues.comments[7][0].startswith("@mallory 放弃没有成功: "))
+        self.assertEqual(issues.issue["state_reason"], "not_planned")
+        self.assertFalse(api.repos["org/app-notes-alice"]["archived"])
+
+    def test_issues_with_other_titles_are_ignored(self):
+        api = FakeGitHub()
+        open_issue(api, form("notes"))
+        before = state(api)
+        for title, body in [("提名项目: excalidraw", form("todo")), ("提名项目", give_up_form("notes")),
+                            ("领取仓库 2", form("todo")), ("放弃", give_up_form("notes"))]:
+            with self.subTest(title=title):
+                issues = open_issue(api, body, title=title)
+                self.assertEqual((issues.comments, issues.issue["state"]), ({}, "open"))
+                self.assertEqual(state(api), before)
+
+    def test_issue_forms_carry_the_titles_and_the_field_the_bot_reads(self):
+        forms = Path(__file__).resolve().parents[1] / ".github" / "ISSUE_TEMPLATE"
+        for name, title in [("enroll.yml", enroll.TITLE), ("give-up.yml", enroll.GIVE_UP_TITLE)]:
+            with self.subTest(form=name):
+                text = (forms / name).read_text(encoding="utf-8")
+                self.assertIn(f"\ntitle: {title}\n", text)
+                self.assertIn(f"\n      label: {enroll.APP_LABEL}\n", text)
 
     def test_max_repos_is_read_from_the_environment(self):
         api = FakeGitHub()
