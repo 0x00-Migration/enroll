@@ -221,6 +221,27 @@ class EnrollTest(unittest.TestCase):
         with self.assertRaises(enroll.Refusal):
             enroll.app_name(None)
 
+    def test_teammates_are_read_from_the_issue_form(self):
+        body = "### 应用名\n\nnotes\n\n### 队友\n\n@bob, carol\nDave\n\n### 确认\n\n- [X] ok"
+        self.assertEqual(enroll.teammates(body, "alice"), ["bob", "carol", "Dave"])
+        self.assertEqual(enroll.app_name(body), "notes")
+        self.assertEqual(enroll.teammates("### 队友\n\nbob，carol、 dave", "alice"), ["bob", "carol", "dave"])
+        self.assertEqual(enroll.teammates("### 队友\n\n" + "b" * 39, "alice"), ["b" * 39])
+
+    def test_empty_teammates_field_means_no_teammates(self):
+        for body in ["### 应用名\n\nnotes\n\n### 队友\n\n_No response_\n\n### 确认\n\n- [X] ok", "### 应用名\n\nnotes", None]:
+            with self.subTest(body=body):
+                self.assertEqual(enroll.teammates(body, "alice"), [])
+
+    def test_teammates_are_deduplicated_ignoring_case(self):
+        self.assertEqual(enroll.teammates("### 队友\n\nbob @Bob BOB carol", "alice"), ["bob", "carol"])
+
+    def test_bad_teammate_lists_are_refused(self):
+        for value in ["-bob", "bob-", "b--b", "b_b", "@@bob", "b" * 40, "名字", "https://github.com/bob",
+                      "@Alice", "bob carol dave erin"]:
+            with self.subTest(value=value), self.assertRaises(enroll.Refusal):
+                enroll.teammates(f"### 队友\n\n{value}\n\n### 确认\n\n- [X] ok", "alice")
+
     def test_success_message_skips_the_invitation_step_for_writers(self):
         self.assertNotIn("invitations", enroll.success_message("alice", "https://github.com/org/app-notes-alice", "write"))
         self.assertIn("/invitations", enroll.success_message("alice", "https://github.com/org/app-notes-alice", "invited"))

@@ -15,6 +15,10 @@ RULESET = "history"
 APP_LABEL = "应用名"
 APP_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 APP_NAME_MAX = 40
+TEAM_LABEL = "队友"
+TEAM_MAX = 4
+LOGIN = re.compile(r"[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
+LOGIN_MAX = 39
 WRITE = {"write", "maintain", "admin"}
 
 
@@ -22,14 +26,36 @@ class Refusal(Exception):
     """The application cannot be accepted; the message is shown to the applicant."""
 
 
+def field(body, label):
+    match = re.search(rf"^###\s*{label}\s*$(.*?)(?=^###|\Z)", body or "", re.M | re.S)
+    value = match[1].strip() if match else ""
+    return "" if value == "_No response_" else value
+
+
 def app_name(body):
     """Read the app name field of the issue form."""
-    match = re.search(rf"^###\s*{APP_LABEL}\s*$(.*?)(?=^###|\Z)", body or "", re.M | re.S)
-    value = match[1].strip().lower() if match else ""
+    value = field(body, APP_LABEL).lower()
     if not APP_NAME.fullmatch(value) or len(value) > APP_NAME_MAX:
         raise Refusal(f"应用名要是 1 到 {APP_NAME_MAX} 个小写字母、数字或 `-` (不以 `-` 开头或结尾, 不连用), 比如 `markdown-editor`. "
                       "请从领取页面重新开一个 issue.")
     return value
+
+
+def teammates(body, applicant_login):
+    logins = {}
+    for word in re.split(r"[\s,，、]+", field(body, TEAM_LABEL)):
+        if not word:
+            continue
+        login = word.removeprefix("@")
+        if not LOGIN.fullmatch(login) or len(login) > LOGIN_MAX:
+            raise Refusal(f"队友要写 GitHub 用户名 (字母、数字和单个 `-`, 最多 {LOGIN_MAX} 个字符), 用空格、逗号或换行隔开, 比如 `@bob, carol`. "
+                          f"`{word}` 不是有效的用户名. 请从领取页面重新开一个 issue.")
+        logins.setdefault(login.lower(), login)
+    if applicant_login.lower() in logins:
+        raise Refusal("队友里不用写你自己. 请从领取页面重新开一个 issue.")
+    if len(logins) >= TEAM_MAX:
+        raise Refusal(f"一个队最多 {TEAM_MAX} 人, 所以队友最多写 {TEAM_MAX - 1} 个. 请从领取页面重新开一个 issue.")
+    return list(logins.values())
 
 
 def check_template(api, template):
