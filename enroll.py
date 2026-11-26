@@ -7,14 +7,13 @@ import sys
 import time
 
 from github import ApiError, GitHub, eventually
+from projects import APP_NAME, APP_NAME_MAX
 
 TITLE = "领取仓库"
 TEMPLATE = "app-template"
 PREFIX = "app-"
 RULESET = "history"
 APP_LABEL = "应用名"
-APP_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
-APP_NAME_MAX = 40
 WRITE = {"write", "maintain", "admin"}
 
 
