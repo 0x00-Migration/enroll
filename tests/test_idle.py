@@ -160,6 +160,20 @@ class IdleTest(unittest.TestCase):
         self.assertEqual(list(issues.comments), [8])
         self.assertIn("#7", log.getvalue())
 
+    def test_restored_claim_gets_idle_days_again_from_its_restore(self):
+        api = claimed()
+        sweep(api, LATE)
+        restored = LATE + timedelta(hours=2)
+        full = "org/app-excalidraw-alice"
+        api.repos[full]["archived"] = False
+        del api.variables[full]["RELEASED_AT"], api.variables[full]["RELEASE_REASON"]
+        api.variables[full]["CLAIMED_AT"]["value"] = restored.isoformat()
+        before = state(api)
+        issues = sweep(api, restored + timedelta(hours=1))
+        self.assertEqual((state(api), issues.comments), (before, {}))
+        sweep(api, restored + timedelta(days=DAYS, hours=1))
+        self.assertTrue(api.repos[full]["archived"])
+
     def test_claim_without_an_issue_is_released_silently(self):
         api = FakeGitHub()
         claim(api, "excalidraw")

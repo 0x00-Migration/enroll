@@ -78,5 +78,6 @@
 
 - 失败: 机器人在 issue 里留言并保持打开, 看 Actions 日志, 修好后手动运行 `Enroll` 并填 issue 号. `Release idle claims` 失败了, 下一个小时会重跑.
 - 停止领取: 在 Actions 里禁用 `Enroll` workflow. 正式赛结束后可以禁用 `Release idle claims`.
-- 恢复一个放弃或收回的领取: 在仓库 Settings 里取消归档, 删掉变量 `RELEASED_AT` 和 `RELEASE_REASON`. 如果这期间正式赛项目已经被别人领了, 恢复后两个人同时领着, 先商量好.
+- 恢复一个放弃或收回的领取: 在仓库 Settings 里取消归档, 删掉变量 `RELEASED_AT` 和 `RELEASE_REASON`; 有 `CLAIMED_AT` 的, 把它改成恢复的时间, 带时区, 比如 `2026-12-03T10:00:00+08:00`.
+  收回从这个时间重新算 `IDLE_DAYS`, 恢复以前的 push 不算; 不改的话, 下一个小时又会被收回. 如果这期间正式赛项目已经被别人领了, 恢复后两个人同时领着, 先商量好.
 - 模板里的 acdev 版本在 `app-template/.github/workflows/check.yml` 的 `ACDEV_VERSION` 和 `package.json` 的 `@acde/api` 两处, 一起改. 已生成的仓库不会跟着变.
