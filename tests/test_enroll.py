@@ -2,6 +2,7 @@ import contextlib
 import copy
 import io
 import os
+import re
 import sys
 import unittest
 from datetime import datetime, timezone
@@ -530,6 +531,8 @@ class IssueTest(unittest.TestCase):
                 text = (forms / name).read_text(encoding="utf-8")
                 self.assertIn(f"\ntitle: {title}\n", text)
                 self.assertIn(f"\n      label: {enroll.APP_LABEL}\n", text)
+        nomination = re.search(r'^title: "(.*)"$', (forms / "nominate.yml").read_text(encoding="utf-8"), re.M)[1]
+        self.assertNotIn(nomination.strip(), enroll.ROUTES)
 
     def test_contest_claim_reply_explains_giving_up_and_idle_release(self):
         cases = [("contest project", "excalidraw", CONTEST_TIME, CATALOG, True),
