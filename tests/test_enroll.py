@@ -19,11 +19,21 @@ ORG = "org"
 ALICE = {"login": "alice", "id": 1, "type": "User"}
 MALLORY = {"login": "mallory", "id": 2, "type": "User"}
 BOB = {"login": "bob", "id": 11, "type": "User"}
+BOT = {"login": "enroll-bot[bot]", "id": 900}
+BEIJING = projects.BEIJING
+WARMUP_TIME = datetime(2026, 11, 28, 12, tzinfo=BEIJING)
+CONTEST_TIME = datetime(2026, 12, 2, 12, tzinfo=BEIJING)
+
+
+def github_time(moment):
+    return moment.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 class FakeGitHub:
     def __init__(self):
         self.users = {"alice": dict(ALICE), "mallory": dict(MALLORY), "bob": dict(BOB)}
+        self.now = CONTEST_TIME
+        self.activity = {}
         self.repos = {f"{ORG}/app-template": self.repo("app-template", template=None, is_template=True)}
         self.variables = {}
         self.rulesets = {}
@@ -35,7 +45,7 @@ class FakeGitHub:
     def repo(self, name, template=f"{ORG}/app-template", is_template=False, description=None):
         full = f"{ORG}/{name}"
         return {"name": name, "full_name": full, "html_url": "https://github.com/" + full, "description": description,
-                "default_branch": "main",
+                "default_branch": "main", "created_at": github_time(self.now),
                 "is_template": is_template, "private": False, "archived": False,
                 "template_repository": {"full_name": template} if template else None}
 
@@ -77,6 +87,8 @@ class FakeGitHub:
                 result = {"user": user, "permission": self.collaborators.get(full, {}).get(rest[1], "read")}
             elif rest[0] == "invitations":
                 result = list(self.invitations.get(full, {}).values())
+            elif rest[0] == "activity":
+                result = self.activity.get(full, [])[:100]
         if result is None:
             if missing_ok:
                 return None
@@ -95,6 +107,8 @@ class FakeGitHub:
             if target in self.repos:
                 raise ApiError("POST", path, 422, "name already exists")
             self.repos[target] = self.repo(body["name"], template=full, description=body["description"])
+            self.activity[target] = [{"activity_type": "branch_creation", "ref": "refs/heads/main",
+                                      "actor": dict(BOT), "timestamp": github_time(self.now)}]
         elif parts[3:] == ["actions", "variables"]:
             self.writable("POST", path, full)
             self.variables.setdefault(full, {})[body["name"]] = dict(body)
@@ -146,15 +160,8 @@ def run(api, applicant=ALICE, app="notes"):
     return enroll.enroll(api, ORG, applicant, app, sleep=lambda _: None)
 
 
-BEIJING = projects.BEIJING
-WARMUP_TIME = datetime(2026, 11, 28, 12, tzinfo=BEIJING)
-CONTEST_TIME = datetime(2026, 12, 2, 12, tzinfo=BEIJING)
 CATALOG = projects.parse(listing(entry("hello", warmup=True), entry("excalidraw"), entry("obsidian"), entry("foo"), entry("foo-bar")))
 EMPTY = projects.parse(listing())
-
-
-def github_time(moment):
-    return moment.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def claim(api, project, applicant=ALICE, now=CONTEST_TIME, **options):
