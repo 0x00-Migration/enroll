@@ -1,9 +1,11 @@
-"""The project list in projects.json, its two claim windows, and the PROJECTS.md page built from them.
+"""The project list in projects.json, its two claim windows, and the PROJECTS.md page built from them;
+also the list's two limits set as repository variables, MAX_REPOS and IDLE_DAYS.
 
 After editing projects.json, run `python3 projects.py` to regenerate PROJECTS.md.
 """
 
 import json
+import math
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -89,6 +91,30 @@ def parse(data):
                 raise ValueError(f"projects.json: id {long!r} starts with id {short!r} and a hyphen, so one repository name "
                                  "could be a claim of either; rename one of them.")
     return Catalog(parse_window(data, "warmup"), parse_window(data, "contest"), listed)
+
+
+def max_repos(text):
+    """MAX_REPOS: how many contest projects one player may hold at once; None when unset."""
+    text = (text or "").strip()
+    if not text:
+        return None
+    if not re.fullmatch(r"[0-9]+", text):
+        raise ValueError(f"MAX_REPOS must be a whole number of projects, like 2, not {text!r}; unset it for no limit.")
+    return int(text)
+
+
+def idle_days(text):
+    """IDLE_DAYS: the days a contest claim may go without a push by its player; None when unset."""
+    text = (text or "").strip()
+    if not text:
+        return None
+    try:
+        days = float(text)
+    except ValueError:
+        days = math.nan
+    if not (math.isfinite(days) and days > 0):
+        raise ValueError(f"IDLE_DAYS must be a positive number of days, like 2 or 0.5, not {text!r}; unset it to never release.")
+    return days
 
 
 def load(path=LIST):

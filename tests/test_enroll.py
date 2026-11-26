@@ -188,8 +188,9 @@ def give_up_form(app):
     return f"### 应用名\n\n{app}\n\n### 确认\n\n- [X] 我知道放弃以后不能再往这个仓库推送, 也不能再领这个项目"
 
 
-def open_issue(api, body, title=enroll.TITLE, user=ALICE, opened=CONTEST_TIME, catalog=EMPTY, **env):
-    issues = FakeIssues({"number": 7, "title": title, "body": body, "user": user, "state": "open", "created_at": github_time(opened)})
+def open_issue(api, body, title=enroll.TITLE, user=ALICE, opened=CONTEST_TIME, catalog=EMPTY, issues=None, **env):
+    issues = issues or FakeIssues()
+    issues.issue = {"number": 7, "title": title, "body": body, "user": user, "state": "open", "created_at": github_time(opened)}
     environ = {"GITHUB_REPOSITORY": f"{ORG}/enroll", "GITHUB_REPOSITORY_OWNER": ORG,
                "GH_TOKEN": "app", "ISSUE_TOKEN": "issues", "ISSUE_NUMBER": "7", **env}
     with mock.patch.dict(os.environ, environ, clear=True), \
@@ -607,6 +608,33 @@ class IssueTest(unittest.TestCase):
         self.assertNotIn("org/app-obsidian-alice", api.repos)
         self.assertEqual(open_issue(api, form("obsidian"), catalog=CATALOG, MAX_REPOS="").issue["state_reason"], "completed")
         self.assertIn("org/app-obsidian-alice", api.repos)
+
+    def test_free_mode_claims_ignore_max_repos(self):
+        api = FakeGitHub()
+        self.assertEqual(open_issue(api, form("notes"), MAX_REPOS="lots").issue["state_reason"], "completed")
+
+    def test_list_mode_claims_fail_while_max_repos_is_not_a_whole_number(self):
+        for value in ("-1", "1.5", "lots"):
+            with self.subTest(MAX_REPOS=value):
+                api = FakeGitHub()
+                before = state(api)
+                issues = FakeIssues()
+                with self.assertRaises(ValueError):
+                    open_issue(api, form("excalidraw"), catalog=CATALOG, issues=issues, MAX_REPOS=value)
+                [reply] = issues.comments[7]
+                self.assertIn("处理时出错", reply)
+                self.assertEqual(issues.issue["state"], "open")
+                self.assertEqual(state(api), before)
+
+    def test_claim_reply_promises_idle_release_only_for_idle_days_that_parse(self):
+        cases = {"0.5": "0.5", "1e1": "10", "0": None, "-2": None, "inf": None, "nan": None, "two": None, "": None}
+        for value, days in cases.items():
+            with self.subTest(IDLE_DAYS=value):
+                issues = open_issue(FakeGitHub(), form("excalidraw"), catalog=CATALOG, IDLE_DAYS=value)
+                [reply] = issues.comments[7]
+                self.assertEqual(issues.issue["state_reason"], "completed")
+                self.assertIn("「放弃项目」", reply)
+                self.assertEqual(re.findall(r"领取后 (\S+) 天内一直没有 push", reply), [days] if days else [])
 
 
 if __name__ == "__main__":

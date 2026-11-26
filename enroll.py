@@ -254,14 +254,18 @@ def claim_issue(api, org, issue):
     login = issue["user"]["login"]
     catalog = projects.load()
     listed = catalog if catalog.projects else None
-    limit = os.environ.get("MAX_REPOS")
+    limit = None if listed is None else projects.max_repos(os.environ.get("MAX_REPOS"))
     url, access = enroll(api, org, issue["user"], app, os.environ.get("TEMPLATE") or TEMPLATE, os.environ.get("PREFIX") or PREFIX,
-                         catalog=listed, now=opened_at(issue), max_repos=int(limit) if limit else None, issue=issue["number"])
+                         catalog=listed, now=opened_at(issue), max_repos=limit, issue=issue["number"])
     print(f"Enrolled {login}: {url} ({access})")
     note = None
     if listed is not None and not listed.projects[app].warmup:
-        days = os.environ.get("IDLE_DAYS")
-        note = "这个正式赛项目现在只归你. 不想做了, 开「放弃项目」issue 交还" + (f"; 领取后 {days} 天内一直没有 push, 项目会被收回." if days else ".")
+        try:
+            days = projects.idle_days(os.environ.get("IDLE_DAYS"))
+        except ValueError as error:
+            print(f"{error} The reply leaves idle release out.")
+            days = None
+        note = "这个正式赛项目现在只归你. 不想做了, 开「放弃项目」issue 交还" + (f"; 领取后 {days:g} 天内一直没有 push, 项目会被收回." if days else ".")
     return success_message(login, url, access, note)
 
 

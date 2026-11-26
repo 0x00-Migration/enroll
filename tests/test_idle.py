@@ -196,6 +196,14 @@ class IdleTest(unittest.TestCase):
                     scheduled_run(api, days)
                 self.assertFalse(api.repos["org/app-excalidraw-alice"]["archived"])
 
+    def test_scheduled_run_refuses_idle_days_that_are_not_finite_numbers(self):
+        for days in ("inf", "nan", "two"):
+            with self.subTest(IDLE_DAYS=days):
+                api = claimed()
+                with self.assertRaises(ValueError):
+                    scheduled_run(api, days)
+                self.assertFalse(api.repos["org/app-excalidraw-alice"]["archived"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -48,9 +48,7 @@ def release_idle(api, issues, hub, org, catalog, now, days, prefix=PREFIX):
 
 
 def main():
-    days = float(os.environ["IDLE_DAYS"]) if os.environ.get("IDLE_DAYS") else None
-    if days is not None and not days > 0:
-        raise ValueError(f"IDLE_DAYS must be a positive number of days, not {os.environ['IDLE_DAYS']}; unset it to never release.")
+    days = projects.idle_days(os.environ.get("IDLE_DAYS"))
     released = release_idle(GitHub(os.environ.get("GH_TOKEN")), GitHub(os.environ.get("ISSUE_TOKEN")),
                             os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_REPOSITORY_OWNER"], projects.load(),
                             datetime.now(timezone.utc), days, os.environ.get("PREFIX") or PREFIX)
