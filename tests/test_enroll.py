@@ -369,7 +369,8 @@ class TeamTest(unittest.TestCase):
         _, pending = run(api, app="notes", mates=["carol"])
         notes, todo = repo_url("app-notes-alice"), repo_url("app-todo-alice")
         self.assertEqual(pending, {"alice": [], "bob": [], "carol": [notes, todo]})
-        self.assertEqual(recorded_team(api, "app-notes-alice"), ("1,11,12", "alice,bob,carol", "@alice @bob @carol"))
+        for name in ["app-notes-alice", "app-todo-alice"]:
+            self.assertEqual(recorded_team(api, name), ("1,11,12", "alice,bob,carol", "@alice @bob @carol"))
         self.assertEqual(invitees(api, "app-notes-alice"), {12})
         self.assertEqual(invitees(api, "app-todo-alice"), {12})
 
@@ -434,7 +435,21 @@ class TeamTest(unittest.TestCase):
         _, pending = run(api, app="todo", mates=["bob"])
         notes, todo = repo_url("app-notes-alice"), repo_url("app-todo-alice")
         self.assertEqual(pending, {"alice": [todo, notes], "bob": [todo, notes]})
-        self.assertEqual(recorded_team(api, "app-todo-alice"), ("1,11", "alice,bob", "@alice @bob"))
+        for name in ["app-notes-alice", "app-todo-alice"]:
+            self.assertEqual(recorded_team(api, name), ("1,11", "alice,bob", "@alice @bob"))
+
+    def test_renamed_member_is_recorded_under_the_new_login_everywhere(self):
+        api = FakeGitHub()
+        run(api, app="notes", mates=["bob"])
+        run(api, app="todo")
+        api.users["robert"] = dict(api.users.pop("bob"), login="robert")
+        _, pending = run(api, app="todo")
+        notes, todo = repo_url("app-notes-alice"), repo_url("app-todo-alice")
+        self.assertEqual(pending, {"alice": [todo, notes], "robert": [todo, notes]})
+        for name in ["app-notes-alice", "app-todo-alice"]:
+            self.assertEqual(recorded_team(api, name), ("1,11", "alice,robert", "@alice @robert"))
+        with self.assertRaises(enroll.Refusal):
+            run(api, CAROL, app="chat", mates=["robert"])
 
     def test_repository_naming_the_captain_but_bound_to_someone_else_is_not_theirs(self):
         api = FakeGitHub()

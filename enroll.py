@@ -238,9 +238,11 @@ def enroll(api, org, applicant, app, mates=(), template=TEMPLATE, prefix=PREFIX,
     bind(api, full, student, sleep)
     set_variable(api, full, "APP_NAME", app)
     protect(api, full, repo["default_branch"])
-    record(api, repo, team)
+    repos = [repo, *(other for other in own if other["full_name"].lower() != full.lower())]
+    for each in repos:
+        record(api, each, team)
     pending = {user["login"]: [] for user in team}
-    for each in [repo, *(other for other in own if other["full_name"].lower() != full.lower())]:
+    for each in repos:
         for user in team:
             if grant(api, each["full_name"], user) == "invited":
                 pending[user["login"]].append(each["html_url"])
