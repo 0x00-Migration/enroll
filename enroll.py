@@ -214,13 +214,15 @@ def give_up(api, org, opener, app, now, prefix=PREFIX):
     return repo["html_url"], True
 
 
-def success_message(login, url, access):
+def success_message(login, url, access, note=None):
     steps = [] if access == "write" else [f"接受邀请: {url}/invitations (7 天内有效; 过期了重新开一个 issue 即可)"]
     steps += [
         f"克隆: `git clone {url}.git`",
         "开发, 提交, push. 只有你能推送这个仓库; `main` 不能 force push, 也不能删除.",
         "每次 push 会自动跑 `acdev check` 和 `acdev build`, 结果在仓库的 Actions 页面. 作品由审核员人工审核.",
     ]
+    if note:
+        steps.append(note)
     lines = "\n".join(f"{i}. {step}" for i, step in enumerate(steps, 1))
     return f"@{login} 你的仓库已就绪: {url}\n\n{lines}\n"
 
@@ -241,12 +243,16 @@ def claim_issue(api, org, issue):
     app = app_name(issue.get("body"))
     login = issue["user"]["login"]
     catalog = projects.load()
+    listed = catalog if catalog.projects else None
     limit = os.environ.get("MAX_REPOS")
     url, access = enroll(api, org, issue["user"], app, os.environ.get("TEMPLATE") or TEMPLATE, os.environ.get("PREFIX") or PREFIX,
-                         catalog=catalog if catalog.projects else None, now=opened_at(issue),
-                         max_repos=int(limit) if limit else None, issue=issue["number"])
+                         catalog=listed, now=opened_at(issue), max_repos=int(limit) if limit else None, issue=issue["number"])
     print(f"Enrolled {login}: {url} ({access})")
-    return success_message(login, url, access)
+    note = None
+    if listed is not None and not listed.projects[app].warmup:
+        days = os.environ.get("IDLE_DAYS")
+        note = "这个正式赛项目现在只归你. 不想做了, 开「放弃项目」issue 交还" + (f"; 领取后 {days} 天内一直没有 push, 项目会被收回." if days else ".")
+    return success_message(login, url, access, note)
 
 
 def give_up_issue(api, org, issue):

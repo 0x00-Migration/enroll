@@ -43,4 +43,5 @@ jobs:
           TEMPLATE: ${{ vars.TEMPLATE }}
           PREFIX: ${{ vars.PREFIX }}
           MAX_REPOS: ${{ vars.MAX_REPOS }}
+          IDLE_DAYS: ${{ vars.IDLE_DAYS }}
         run: python3 -u enroll.py

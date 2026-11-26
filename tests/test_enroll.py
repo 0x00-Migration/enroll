@@ -531,6 +531,15 @@ class IssueTest(unittest.TestCase):
                 self.assertIn(f"\ntitle: {title}\n", text)
                 self.assertIn(f"\n      label: {enroll.APP_LABEL}\n", text)
 
+    def test_contest_claim_reply_explains_giving_up_and_idle_release(self):
+        cases = [("contest project", "excalidraw", CONTEST_TIME, CATALOG, True),
+                 ("warm-up project", "hello", WARMUP_TIME, CATALOG, False),
+                 ("free name", "notes", CONTEST_TIME, EMPTY, False)]
+        for case, app, opened, catalog, explained in cases:
+            with self.subTest(case=case):
+                reply = open_issue(FakeGitHub(), form(app), opened=opened, catalog=catalog, IDLE_DAYS="2").comments[7][0]
+                self.assertEqual("「放弃项目」" in reply and "领取后 2 天内一直没有 push" in reply, explained)
+
     def test_max_repos_is_read_from_the_environment(self):
         api = FakeGitHub()
         open_issue(api, form("excalidraw"), catalog=CATALOG, MAX_REPOS="1")
