@@ -18,11 +18,12 @@ from test_projects import entry, listing  # noqa: E402
 ORG = "org"
 ALICE = {"login": "alice", "id": 1, "type": "User"}
 MALLORY = {"login": "mallory", "id": 2, "type": "User"}
+BOB = {"login": "bob", "id": 11, "type": "User"}
 
 
 class FakeGitHub:
     def __init__(self):
-        self.users = {"alice": dict(ALICE), "mallory": dict(MALLORY)}
+        self.users = {"alice": dict(ALICE), "mallory": dict(MALLORY), "bob": dict(BOB)}
         self.repos = {f"{ORG}/app-template": self.repo("app-template", template=None, is_template=True)}
         self.variables = {}
         self.rulesets = {}
@@ -31,9 +32,10 @@ class FakeGitHub:
         self.calls = []
         self.next_id = 100
 
-    def repo(self, name, template=f"{ORG}/app-template", is_template=False):
+    def repo(self, name, template=f"{ORG}/app-template", is_template=False, description=None):
         full = f"{ORG}/{name}"
-        return {"full_name": full, "html_url": "https://github.com/" + full, "default_branch": "main",
+        return {"name": name, "full_name": full, "html_url": "https://github.com/" + full, "description": description,
+                "default_branch": "main",
                 "is_template": is_template, "private": False, "archived": False,
                 "template_repository": {"full_name": template} if template else None}
 
@@ -46,6 +48,8 @@ class FakeGitHub:
         result = None
         if parts[0] == "users":
             result = self.users.get(parts[1])
+        elif parts[0] == "orgs":
+            result = [repo for full, repo in self.repos.items() if full.startswith(parts[1] + "/")]
         elif parts[0] == "repos":
             full = parts[1] + "/" + parts[2]
             rest = parts[3:]
@@ -55,6 +59,9 @@ class FakeGitHub:
                 result = self.repos[full]
             elif rest[0] == "branches":
                 result = {"name": rest[1]}
+            elif rest == ["actions", "variables"]:
+                found = list(self.variables.get(full, {}).values())
+                result = {"total_count": len(found), "variables": found}
             elif rest[:2] == ["actions", "variables"]:
                 result = self.variables.get(full, {}).get(rest[2])
             elif rest[0] == "rulesets":
@@ -83,7 +90,7 @@ class FakeGitHub:
             target = body["owner"] + "/" + body["name"]
             if target in self.repos:
                 raise ApiError("POST", path, 422, "name already exists")
-            self.repos[target] = self.repo(body["name"], template=full)
+            self.repos[target] = self.repo(body["name"], template=full, description=body["description"])
         elif parts[3:] == ["actions", "variables"]:
             self.variables.setdefault(full, {})[body["name"]] = dict(body)
         elif parts[3] == "rulesets":
@@ -331,6 +338,72 @@ class ListModeTest(unittest.TestCase):
                 self.assertEqual(state(api), before)
 
 
+class ExclusiveTest(unittest.TestCase):
+    def test_contest_project_held_by_another_player_is_refused(self):
+        api = FakeGitHub()
+        claim(api, "excalidraw", BOB)
+        before = state(api)
+        with self.assertRaises(enroll.Refusal):
+            claim(api, "excalidraw")
+        self.assertEqual(state(api), before)
+
+    def test_archived_claim_no_longer_holds_the_project(self):
+        api = FakeGitHub()
+        claim(api, "excalidraw", BOB)
+        api.repos["org/app-excalidraw-bob"]["archived"] = True
+        self.assertEqual(claim(api, "excalidraw")[0], "https://github.com/org/app-excalidraw-alice")
+
+    def test_rerunning_your_own_claim_changes_nothing(self):
+        api = FakeGitHub()
+        claim(api, "excalidraw", issue=7)
+        before = state(api)
+        claim(api, "excalidraw", issue=7)
+        self.assertEqual(state(api), before)
+
+    def test_warm_up_project_is_open_to_everyone(self):
+        api = FakeGitHub()
+        claim(api, "hello", BOB, now=WARMUP_TIME)
+        claim(api, "hello", now=WARMUP_TIME)
+        self.assertLessEqual({"org/app-hello-bob", "org/app-hello-alice"}, set(api.repos))
+
+    def test_project_is_not_held_by_a_claim_on_a_longer_id(self):
+        api = FakeGitHub()
+        claim(api, "foo-bar", BOB)
+        claim(api, "foo")
+        self.assertIn("org/app-foo-alice", api.repos)
+
+    def test_claim_that_stopped_before_recording_its_project_still_holds_it(self):
+        api = FakeGitHub()
+        api.repos["org/app-excalidraw-bob"] = api.repo("app-excalidraw-bob", description="@bob")
+        with self.assertRaises(enroll.Refusal):
+            claim(api, "excalidraw")
+        self.assertNotIn("org/app-excalidraw-alice", api.repos)
+        claim(api, "excalidraw", BOB)
+        self.assertEqual(api.variables["org/app-excalidraw-bob"]["APP_NAME"]["value"], "excalidraw")
+
+    def test_max_repos_limits_the_contest_projects_held_at_once(self):
+        api = FakeGitHub()
+        api.users["bar-alice"] = {"login": "bar-alice", "id": 4, "type": "User"}
+        claim(api, "foo", api.users["bar-alice"])
+        claim(api, "hello", now=WARMUP_TIME)
+        claim(api, "excalidraw", max_repos=1)
+        before = state(api)
+        with self.assertRaises(enroll.Refusal):
+            claim(api, "obsidian", max_repos=1)
+        self.assertEqual(state(api), before)
+        claim(api, "excalidraw", max_repos=1)
+        self.assertEqual(state(api), before)
+        api.repos["org/app-excalidraw-alice"]["archived"] = True
+        claim(api, "obsidian", max_repos=1)
+        self.assertIn("org/app-obsidian-alice", api.repos)
+
+    def test_without_max_repos_a_player_holds_any_number_of_projects(self):
+        api = FakeGitHub()
+        for project in ("excalidraw", "obsidian", "foo"):
+            claim(api, project)
+        self.assertLessEqual({"org/app-excalidraw-alice", "org/app-obsidian-alice", "org/app-foo-alice"}, set(api.repos))
+
+
 class IssueTest(unittest.TestCase):
     def test_free_name_is_accepted_while_the_list_is_empty(self):
         api = FakeGitHub()
@@ -347,6 +420,14 @@ class IssueTest(unittest.TestCase):
         self.assertIn("2026-12-01 00:00 到 2026-12-07 23:59 (北京时间)", reply)
         self.assertEqual(issues.issue["state_reason"], "not_planned")
         self.assertNotIn("org/app-excalidraw-alice", api.repos)
+
+    def test_max_repos_is_read_from_the_environment(self):
+        api = FakeGitHub()
+        open_issue(api, form("excalidraw"), catalog=CATALOG, MAX_REPOS="1")
+        self.assertEqual(open_issue(api, form("obsidian"), catalog=CATALOG, MAX_REPOS="1").issue["state_reason"], "not_planned")
+        self.assertNotIn("org/app-obsidian-alice", api.repos)
+        self.assertEqual(open_issue(api, form("obsidian"), catalog=CATALOG, MAX_REPOS="").issue["state_reason"], "completed")
+        self.assertIn("org/app-obsidian-alice", api.repos)
 
 
 if __name__ == "__main__":

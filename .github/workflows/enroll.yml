@@ -15,7 +15,7 @@ permissions:
   issues: write
 
 concurrency:
-  group: enroll-${{ github.event.issue.user.id || inputs.issue }}
+  group: enroll
   queue: max
   cancel-in-progress: false
 
@@ -42,4 +42,5 @@ jobs:
           ISSUE_NUMBER: ${{ inputs.issue }}
           TEMPLATE: ${{ vars.TEMPLATE }}
           PREFIX: ${{ vars.PREFIX }}
+          MAX_REPOS: ${{ vars.MAX_REPOS }}
         run: python3 -u enroll.py

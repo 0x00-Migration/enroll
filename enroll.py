@@ -42,6 +42,43 @@ def find_project(catalog, app, now):
     return project
 
 
+def variables(api, full):
+    found = api.get(f"repos/{full}/actions/variables?per_page=30")
+    return {variable["name"]: variable["value"] for variable in found["variables"]}
+
+
+def active_repos(api, org):
+    """The organization's unarchived repositories. The list returns 100 per request with names, so it indexes
+    the claims; variables cost a request per repository and only confirm the few candidates."""
+    return [repo for repo in api.pages(f"orgs/{org}/repos?type=all") if not repo["archived"]]
+
+
+def candidates(api, repos, prefix, ids, keep=lambda repo: True):
+    """Yield the repositories whose names could claim one of the projects, with their variables."""
+    starts = tuple(f"{prefix}{project}-".lower() for project in ids)
+    for repo in repos:
+        if repo["name"].lower().startswith(starts) and keep(repo):
+            yield repo, variables(api, repo["full_name"])
+
+
+def check_available(api, org, prefix, catalog, student, project, max_repos):
+    repos = active_repos(api, org)
+    for repo, values in candidates(api, repos, prefix, [project.id]):
+        # A claim that stopped before writing APP_NAME still holds the project.
+        if values.get("APP_NAME") in (None, project.id) and values.get("STUDENT_ID") != str(student["id"]):
+            raise Refusal(f"正式赛项目 `{project.id}` 现在归别人 ({repo['html_url']}), 同一时间一个项目只归一个人. "
+                          "他放弃或者项目被收回以后, 项目会回到列表. 请换一个项目, 从领取页面重新开一个 issue.")
+    if max_repos is None:
+        return
+    contest = {listed.id for listed in catalog.projects.values() if not listed.warmup}
+    suffix = "-" + student["login"].lower()
+    mine = [repo["html_url"] for repo, values in candidates(api, repos, prefix, contest, lambda repo: repo["name"].lower().endswith(suffix))
+            if values.get("STUDENT_ID") == str(student["id"]) and values.get("APP_NAME") in contest]
+    if len(mine) >= max_repos:
+        raise Refusal(f"每人同一时间最多做 {max_repos} 个正式赛项目, 你在做: {' '.join(mine)}. "
+                      "要换项目, 先开「放弃项目」issue 交还一个, 再从领取页面重新开一个 issue.")
+
+
 def check_template(api, template):
     source = api.get("repos/" + template)
     if not source.get("is_template") or source.get("private") or source.get("archived"):
@@ -124,9 +161,9 @@ def grant(api, full, student):
     return "invited" if result else "write"
 
 
-def enroll(api, org, applicant, app, template=TEMPLATE, prefix=PREFIX, sleep=time.sleep, catalog=None, now=None, issue=None):
-    if catalog is not None:
-        find_project(catalog, app, now)
+def enroll(api, org, applicant, app, template=TEMPLATE, prefix=PREFIX, sleep=time.sleep,
+           catalog=None, now=None, max_repos=None, issue=None):
+    project = None if catalog is None else find_project(catalog, app, now)
     student = api.get("users/" + applicant["login"], missing_ok=True)
     if student is None or student["id"] != applicant["id"]:
         raise Refusal("提交 issue 之后 GitHub 用户名变了. 请用现在的账号重新开一个 issue.")
@@ -138,6 +175,8 @@ def enroll(api, org, applicant, app, template=TEMPLATE, prefix=PREFIX, sleep=tim
     full = f"{org}/{name}"
     repo = api.get("repos/" + full, missing_ok=True)
     if repo is None:
+        if project is not None and not project.warmup:
+            check_available(api, org, prefix, catalog, student, project, max_repos)
         check_template(api, template)
         repo = create(api, org, template, name, "@" + student["login"], sleep)
     if repo["full_name"].lower() != full.lower():
@@ -194,8 +233,10 @@ def main():
     try:
         app = app_name(issue.get("body"))
         catalog = projects.load()
+        limit = os.environ.get("MAX_REPOS")
         url, access = enroll(api, org, issue["user"], app, os.environ.get("TEMPLATE") or TEMPLATE, os.environ.get("PREFIX") or PREFIX,
-                             catalog=catalog if catalog.projects else None, now=opened_at(issue), issue=issue["number"])
+                             catalog=catalog if catalog.projects else None, now=opened_at(issue),
+                             max_repos=int(limit) if limit else None, issue=issue["number"])
     except Refusal as refusal:
         issues.post(path + "/comments", {"body": f"@{login} 没有创建仓库: {refusal}"})
         issues.patch(path, {"state": "closed", "state_reason": "not_planned"})
