@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import sys
 import time
 
@@ -11,11 +12,24 @@ TITLE = "领取仓库"
 TEMPLATE = "app-template"
 PREFIX = "app-"
 RULESET = "history"
+APP_LABEL = "应用名"
+APP_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+APP_NAME_MAX = 40
 WRITE = {"write", "maintain", "admin"}
 
 
 class Refusal(Exception):
     """The application cannot be accepted; the message is shown to the applicant."""
+
+
+def app_name(body):
+    """Read the app name field of the issue form."""
+    match = re.search(rf"^###\s*{APP_LABEL}\s*$(.*?)(?=^###|\Z)", body or "", re.M | re.S)
+    value = match[1].strip().lower() if match else ""
+    if not APP_NAME.fullmatch(value) or len(value) > APP_NAME_MAX:
+        raise Refusal(f"应用名要是 1 到 {APP_NAME_MAX} 个小写字母、数字或 `-` (不以 `-` 开头或结尾, 不连用), 比如 `markdown-editor`. "
+                      "请从领取页面重新开一个 issue.")
+    return value
 
 
 def check_template(api, template):
@@ -68,7 +82,7 @@ def bind(api, full, student, sleep):
                 raise
         variable = eventually(lambda: api.get(path), sleep)
     if variable["value"] != expected:
-        raise Refusal(f"仓库 {full} 已属于另一个 GitHub 账号 (可能是用户名被改过后又被别人注册). 请联系维护者.")
+        raise Refusal(f"仓库 {full} 已属于另一个 GitHub 账号. 请换一个应用名; 如果它是你改用户名之前领的, 请联系维护者.")
     set_variable(api, full, "STUDENT_LOGIN", student["login"])
 
 
@@ -100,7 +114,7 @@ def grant(api, full, student):
     return "invited" if result else "write"
 
 
-def enroll(api, org, applicant, template=TEMPLATE, prefix=PREFIX, sleep=time.sleep):
+def enroll(api, org, applicant, app, template=TEMPLATE, prefix=PREFIX, sleep=time.sleep):
     student = api.get("users/" + applicant["login"], missing_ok=True)
     if student is None or student["id"] != applicant["id"]:
         raise Refusal("提交 issue 之后 GitHub 用户名变了. 请用现在的账号重新开一个 issue.")
@@ -108,7 +122,7 @@ def enroll(api, org, applicant, template=TEMPLATE, prefix=PREFIX, sleep=time.sle
         raise Refusal("只接受个人 GitHub 账号.")
 
     template = f"{org}/{template}"
-    name = prefix + student["login"]
+    name = f"{prefix}{app}-{student['login']}"
     full = f"{org}/{name}"
     repo = api.get("repos/" + full, missing_ok=True)
     if repo is None:
@@ -120,6 +134,7 @@ def enroll(api, org, applicant, template=TEMPLATE, prefix=PREFIX, sleep=time.sle
         raise RuntimeError(f"{full} exists but was not generated from {template}; left for a maintainer.")
 
     bind(api, full, student, sleep)
+    set_variable(api, full, "APP_NAME", app)
     protect(api, full, repo["default_branch"])
     return repo["html_url"], grant(api, full, student)
 
@@ -157,7 +172,8 @@ def main():
         print("Not an enrollment issue; ignored.")
         return 0
     try:
-        url, access = enroll(api, org, issue["user"], os.environ.get("TEMPLATE") or TEMPLATE, os.environ.get("PREFIX") or PREFIX)
+        app = app_name(issue.get("body"))
+        url, access = enroll(api, org, issue["user"], app, os.environ.get("TEMPLATE") or TEMPLATE, os.environ.get("PREFIX") or PREFIX)
     except Refusal as refusal:
         issues.post(path + "/comments", {"body": f"@{login} 没有创建仓库: {refusal}"})
         issues.patch(path, {"state": "closed", "state_reason": "not_planned"})

@@ -7,10 +7,18 @@ body:
       value: |
         点 **Create** 提交即可, 机器人会在一两分钟内回复仓库地址和邀请链接.
 
-        - 仓库名是 `app-<你的 GitHub 用户名>`, 公开, 只有你 (和审核员) 能推送.
+        - 每个应用一个仓库, 名字是 `app-<应用名>-<你的 GitHub 用户名>`, 公开, 只有你 (和审核员) 能推送. 做多个应用就领多次.
         - `main` 分支不能 force push, 不能删除: 推上去的提交都会留下来.
         - 每次 push 会自动跑 `acdev check` 和 `acdev build`, 结果在仓库的 Actions 页面. 作品由审核员人工审核.
         - 不要改这个 issue 的标题.
+  - type: input
+    id: app
+    attributes:
+      label: 应用名
+      description: 小写字母、数字和 `-`, 最多 40 个字符, 领取后不能改.
+      placeholder: markdown-editor
+    validations:
+      required: true
   - type: checkboxes
     id: confirm
     attributes:

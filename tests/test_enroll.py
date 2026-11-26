@@ -102,19 +102,20 @@ class FakeGitHub:
         self.invitations[parts[1] + "/" + parts[2]].pop(int(parts[4]))
 
 
-def run(api, applicant=ALICE):
-    return enroll.enroll(api, ORG, applicant, sleep=lambda _: None)
+def run(api, applicant=ALICE, app="notes"):
+    return enroll.enroll(api, ORG, applicant, app, sleep=lambda _: None)
 
 
 class EnrollTest(unittest.TestCase):
     def test_new_applicant_gets_a_bound_protected_repository_and_an_invitation(self):
         api = FakeGitHub()
         url, access = run(api)
-        self.assertEqual(url, "https://github.com/org/app-alice")
+        self.assertEqual(url, "https://github.com/org/app-notes-alice")
         self.assertEqual(access, "invited")
-        self.assertEqual(api.variables["org/app-alice"]["STUDENT_ID"]["value"], "1")
-        self.assertEqual(api.variables["org/app-alice"]["STUDENT_LOGIN"]["value"], "alice")
-        [ruleset] = api.rulesets["org/app-alice"]
+        self.assertEqual(api.variables["org/app-notes-alice"]["STUDENT_ID"]["value"], "1")
+        self.assertEqual(api.variables["org/app-notes-alice"]["STUDENT_LOGIN"]["value"], "alice")
+        self.assertEqual(api.variables["org/app-notes-alice"]["APP_NAME"]["value"], "notes")
+        [ruleset] = api.rulesets["org/app-notes-alice"]
         self.assertEqual({rule["type"] for rule in ruleset["rules"]}, {"deletion", "non_fast_forward"})
         self.assertEqual(ruleset["conditions"]["ref_name"]["include"], ["refs/heads/main"])
 
@@ -122,26 +123,26 @@ class EnrollTest(unittest.TestCase):
         api = FakeGitHub()
         run(api)
         run(api)
-        self.assertEqual(len(api.rulesets["org/app-alice"]), 1)
-        self.assertEqual(len(api.invitations["org/app-alice"]), 1)
+        self.assertEqual(len(api.rulesets["org/app-notes-alice"]), 1)
+        self.assertEqual(len(api.invitations["org/app-notes-alice"]), 1)
         self.assertEqual(sum(call == ("POST", "repos/org/app-template/generate") for call in api.calls), 1)
 
     def test_collaborator_with_write_is_not_invited_again(self):
         api = FakeGitHub()
         run(api)
-        api.invitations["org/app-alice"].clear()
-        api.collaborators["org/app-alice"] = {"alice": "write"}
+        api.invitations["org/app-notes-alice"].clear()
+        api.collaborators["org/app-notes-alice"] = {"alice": "write"}
         self.assertEqual(run(api)[1], "write")
-        self.assertFalse(api.invitations["org/app-alice"])
+        self.assertFalse(api.invitations["org/app-notes-alice"])
 
     def test_expired_invitation_is_replaced(self):
         api = FakeGitHub()
         run(api)
-        [old] = api.invitations["org/app-alice"]
-        api.invitations["org/app-alice"][old]["expired"] = True
+        [old] = api.invitations["org/app-notes-alice"]
+        api.invitations["org/app-notes-alice"][old]["expired"] = True
         self.assertEqual(run(api)[1], "invited")
-        self.assertNotIn(old, api.invitations["org/app-alice"])
-        self.assertEqual(len(api.invitations["org/app-alice"]), 1)
+        self.assertNotIn(old, api.invitations["org/app-notes-alice"])
+        self.assertEqual(len(api.invitations["org/app-notes-alice"]), 1)
 
     def test_repository_bound_to_another_account_is_refused(self):
         api = FakeGitHub()
@@ -149,14 +150,14 @@ class EnrollTest(unittest.TestCase):
         api.users["alice"] = {"login": "alice", "id": 3, "type": "User"}
         with self.assertRaises(enroll.Refusal):
             run(api, api.users["alice"])
-        self.assertEqual(api.variables["org/app-alice"]["STUDENT_ID"]["value"], "1")
+        self.assertEqual(api.variables["org/app-notes-alice"]["STUDENT_ID"]["value"], "1")
 
     def test_renamed_applicant_is_refused(self):
         api = FakeGitHub()
         api.users["alice"] = {"login": "alice", "id": 9, "type": "User"}
         with self.assertRaises(enroll.Refusal):
             run(api)
-        self.assertNotIn("org/app-alice", api.repos)
+        self.assertNotIn("org/app-notes-alice", api.repos)
 
     def test_organization_account_is_refused(self):
         api = FakeGitHub()
@@ -166,35 +167,63 @@ class EnrollTest(unittest.TestCase):
 
     def test_foreign_repository_with_the_same_name_is_left_alone(self):
         api = FakeGitHub()
-        api.repos["org/app-alice"] = api.repo("app-alice", template=None)
+        api.repos["org/app-notes-alice"] = api.repo("app-notes-alice", template=None)
         with self.assertRaises(RuntimeError):
             run(api)
-        self.assertNotIn("org/app-alice", api.variables)
+        self.assertNotIn("org/app-notes-alice", api.variables)
 
     def test_unbound_repository_with_outside_access_is_left_alone(self):
         api = FakeGitHub()
-        api.repos["org/app-alice"] = api.repo("app-alice")
-        api.collaborators["org/app-alice"] = {"mallory": "write"}
+        api.repos["org/app-notes-alice"] = api.repo("app-notes-alice")
+        api.collaborators["org/app-notes-alice"] = {"mallory": "write"}
         with self.assertRaises(RuntimeError):
             run(api)
-        self.assertNotIn("org/app-alice", api.variables)
+        self.assertNotIn("org/app-notes-alice", api.variables)
 
     def test_unbound_repository_from_an_interrupted_run_is_resumed(self):
         api = FakeGitHub()
-        api.repos["org/app-alice"] = api.repo("app-alice")
+        api.repos["org/app-notes-alice"] = api.repo("app-notes-alice")
         self.assertEqual(run(api)[1], "invited")
-        self.assertEqual(api.variables["org/app-alice"]["STUDENT_ID"]["value"], "1")
+        self.assertEqual(api.variables["org/app-notes-alice"]["STUDENT_ID"]["value"], "1")
 
     def test_template_must_be_a_template(self):
         api = FakeGitHub()
         api.repos["org/app-template"]["is_template"] = False
         with self.assertRaises(RuntimeError):
             run(api)
-        self.assertNotIn("org/app-alice", api.repos)
+        self.assertNotIn("org/app-notes-alice", api.repos)
+
+    def test_each_app_gets_its_own_repository(self):
+        api = FakeGitHub()
+        run(api, app="notes")
+        url, _ = run(api, app="markdown-editor")
+        self.assertEqual(url, "https://github.com/org/app-markdown-editor-alice")
+        self.assertIn("org/app-notes-alice", api.repos)
+
+    def test_name_taken_by_another_account_is_refused(self):
+        api = FakeGitHub()
+        api.users["bar-alice"] = {"login": "bar-alice", "id": 4, "type": "User"}
+        run(api, api.users["bar-alice"], app="foo")
+        api.users["alice"] = dict(ALICE)
+        with self.assertRaises(enroll.Refusal):
+            run(api, app="foo-bar")
+        self.assertEqual(api.variables["org/app-foo-bar-alice"]["STUDENT_ID"]["value"], "4")
+
+    def test_app_name_is_read_from_the_issue_form(self):
+        body = "### 应用名\n\nMarkdown-Editor\n\n### 确认\n\n- [X] 我用的是自己的个人 GitHub 账号"
+        self.assertEqual(enroll.app_name(body), "markdown-editor")
+        self.assertEqual(enroll.app_name("### 应用名\n\nnotes"), "notes")
+
+    def test_bad_app_names_are_refused(self):
+        for value in ["_No response_", "-x", "x-", "a--b", "a b", "名字", "a" * 41, ""]:
+            with self.subTest(value=value), self.assertRaises(enroll.Refusal):
+                enroll.app_name(f"### 应用名\n\n{value}\n\n### 确认\n\n- [X] ok")
+        with self.assertRaises(enroll.Refusal):
+            enroll.app_name(None)
 
     def test_success_message_skips_the_invitation_step_for_writers(self):
-        self.assertNotIn("invitations", enroll.success_message("alice", "https://github.com/org/app-alice", "write"))
-        self.assertIn("/invitations", enroll.success_message("alice", "https://github.com/org/app-alice", "invited"))
+        self.assertNotIn("invitations", enroll.success_message("alice", "https://github.com/org/app-notes-alice", "write"))
+        self.assertIn("/invitations", enroll.success_message("alice", "https://github.com/org/app-notes-alice", "invited"))
 
 
 if __name__ == "__main__":
