@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   enroll:
-    if: github.event_name == 'workflow_dispatch' || (!github.event.issue.pull_request && (github.event.issue.title == '领取仓库' || github.event.issue.title == '放弃项目'))
+    if: github.event_name == 'workflow_dispatch' || (!github.event.issue.pull_request && (contains(github.event.issue.title, '领取仓库') || contains(github.event.issue.title, '放弃项目')))
     concurrency:
       group: enroll
       queue: max
