@@ -83,6 +83,11 @@ def parse(data):
         if project.id in listed:
             raise ValueError(f"projects.json: id {project.id!r} appears twice.")
         listed[project.id] = project
+    for short in listed:
+        for long in listed:
+            if long.startswith(short + "-"):
+                raise ValueError(f"projects.json: id {long!r} starts with id {short!r} and a hyphen, so one repository name "
+                                 "could be a claim of either; rename one of them.")
     return Catalog(parse_window(data, "warmup"), parse_window(data, "contest"), listed)
 
 

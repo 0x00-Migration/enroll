@@ -56,6 +56,7 @@ class ProjectsTest(unittest.TestCase):
             "long id": listing(entry("a" * 41)),
             "double hyphen": listing(entry("a--b")),
             "repeated id": listing(entry("notes"), entry("notes", warmup=True)),
+            "id inside a longer id": listing(entry("foo-bar"), entry("foo", warmup=True)),
             "missing field": listing({key: value for key, value in entry("notes").items() if key != "warmup"}),
             "warmup as text": listing(entry("notes", warmup="false")),
             "features as text": listing(entry("notes", features="编辑")),
@@ -66,6 +67,10 @@ class ProjectsTest(unittest.TestCase):
         for case, data in broken.items():
             with self.subTest(case=case), self.assertRaises(ValueError):
                 projects.parse(data)
+
+    def test_ids_that_only_share_a_start_are_accepted(self):
+        catalog = projects.parse(listing(entry("foo"), entry("foobar"), entry("bar-foo")))
+        self.assertEqual(set(catalog.projects), {"foo", "foobar", "bar-foo"})
 
     def test_project_fields_are_read(self):
         project = projects.parse(listing(entry("excalidraw", tier="S", features=["画图"]))).projects["excalidraw"]

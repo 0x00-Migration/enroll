@@ -161,7 +161,7 @@ def run(api, applicant=ALICE, app="notes"):
     return enroll.enroll(api, ORG, applicant, app, sleep=lambda _: None)
 
 
-CATALOG = projects.parse(listing(entry("hello", warmup=True), entry("excalidraw"), entry("obsidian"), entry("foo"), entry("foo-bar")))
+CATALOG = projects.parse(listing(entry("hello", warmup=True), entry("excalidraw"), entry("obsidian"), entry("foo")))
 EMPTY = projects.parse(listing())
 
 
@@ -388,9 +388,9 @@ class ExclusiveTest(unittest.TestCase):
         claim(api, "hello", now=WARMUP_TIME)
         self.assertLessEqual({"org/app-hello-bob", "org/app-hello-alice"}, set(api.repos))
 
-    def test_project_is_not_held_by_a_claim_on_a_longer_id(self):
+    def test_project_is_not_held_by_a_repository_for_a_longer_app_name(self):
         api = FakeGitHub()
-        claim(api, "foo-bar", BOB)
+        run(api, BOB, app="foo-bar")
         claim(api, "foo")
         self.assertIn("org/app-foo-alice", api.repos)
 
