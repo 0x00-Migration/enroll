@@ -98,8 +98,8 @@ def max_repos(text):
     text = (text or "").strip()
     if not text:
         return None
-    if not re.fullmatch(r"[0-9]+", text):
-        raise ValueError(f"MAX_REPOS must be a whole number of projects, like 2, not {text!r}; unset it for no limit.")
+    if not re.fullmatch(r"[0-9]+", text) or int(text) < 1:
+        raise ValueError(f"MAX_REPOS must be a whole number of projects, 1 or more, like 2, not {text!r}; unset it for no limit.")
     return int(text)
 
 

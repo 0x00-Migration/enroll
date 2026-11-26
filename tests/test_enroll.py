@@ -613,8 +613,8 @@ class IssueTest(unittest.TestCase):
         api = FakeGitHub()
         self.assertEqual(open_issue(api, form("notes"), MAX_REPOS="lots").issue["state_reason"], "completed")
 
-    def test_list_mode_claims_fail_while_max_repos_is_not_a_whole_number(self):
-        for value in ("-1", "1.5", "lots"):
+    def test_list_mode_claims_fail_while_max_repos_is_not_a_positive_whole_number(self):
+        for value in ("0", "-1", "1.5", "lots"):
             with self.subTest(MAX_REPOS=value):
                 api = FakeGitHub()
                 before = state(api)
