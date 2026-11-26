@@ -35,7 +35,7 @@ jobs:
           client-id: ${{ vars.ENROLL_APP_CLIENT_ID }}
           private-key: ${{ secrets.ENROLL_APP_KEY }}
           owner: ${{ github.repository_owner }}
-      - name: Create the repository and reply
+      - name: Claim or give up, and reply
         env:
           GH_TOKEN: ${{ steps.app.outputs.token || secrets.ENROLL_TOKEN }}
           ISSUE_TOKEN: ${{ github.token }}
