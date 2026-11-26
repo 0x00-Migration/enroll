@@ -6,6 +6,7 @@ import re
 import sys
 import time
 
+import projects
 from github import ApiError, GitHub, eventually
 from projects import APP_NAME, APP_NAME_MAX
 
@@ -29,6 +30,16 @@ def app_name(body):
         raise Refusal(f"应用名要是 1 到 {APP_NAME_MAX} 个小写字母、数字或 `-` (不以 `-` 开头或结尾, 不连用), 比如 `markdown-editor`. "
                       "请从领取页面重新开一个 issue.")
     return value
+
+
+def find_project(catalog, app, now):
+    project = catalog.projects.get(app)
+    if project is None:
+        raise Refusal(f"`{app}` 不在项目列表 (本仓库的 `PROJECTS.md`) 里, 应用名要填列表里的项目 id. 请从领取页面重新开一个 issue.")
+    window = catalog.window(project)
+    if now not in window:
+        raise Refusal(f"`{app}` 是{'热身赛' if project.warmup else '正式赛'}项目, 只能在 {window} 领.")
+    return project
 
 
 def check_template(api, template):
@@ -113,7 +124,9 @@ def grant(api, full, student):
     return "invited" if result else "write"
 
 
-def enroll(api, org, applicant, app, template=TEMPLATE, prefix=PREFIX, sleep=time.sleep):
+def enroll(api, org, applicant, app, template=TEMPLATE, prefix=PREFIX, sleep=time.sleep, catalog=None, now=None, issue=None):
+    if catalog is not None:
+        find_project(catalog, app, now)
     student = api.get("users/" + applicant["login"], missing_ok=True)
     if student is None or student["id"] != applicant["id"]:
         raise Refusal("提交 issue 之后 GitHub 用户名变了. 请用现在的账号重新开一个 issue.")
@@ -131,9 +144,13 @@ def enroll(api, org, applicant, app, template=TEMPLATE, prefix=PREFIX, sleep=tim
         raise RuntimeError(f"{full} redirects to {repo['full_name']}; left for a maintainer.")
     if (repo.get("template_repository") or {}).get("full_name", "").lower() != template.lower():
         raise RuntimeError(f"{full} exists but was not generated from {template}; left for a maintainer.")
+    if repo["archived"]:
+        raise Refusal(f"仓库 {repo['html_url']} 已归档 (放弃了, 或者领取后一直没有 push 被收回), 不能再领. 请换一个应用名; 要恢复这个仓库请联系维护者.")
 
     bind(api, full, student, sleep)
     set_variable(api, full, "APP_NAME", app)
+    if issue is not None:
+        set_variable(api, full, "CLAIM_ISSUE", str(issue))
     protect(api, full, repo["default_branch"])
     return repo["html_url"], grant(api, full, student)
 
@@ -147,6 +164,10 @@ def success_message(login, url, access):
     ]
     lines = "\n".join(f"{i}. {step}" for i, step in enumerate(steps, 1))
     return f"@{login} 你的仓库已就绪: {url}\n\n{lines}\n"
+
+
+def opened_at(issue):
+    return projects.moment(issue["created_at"])
 
 
 def load_issue(hub, issues):
@@ -172,7 +193,9 @@ def main():
         return 0
     try:
         app = app_name(issue.get("body"))
-        url, access = enroll(api, org, issue["user"], app, os.environ.get("TEMPLATE") or TEMPLATE, os.environ.get("PREFIX") or PREFIX)
+        catalog = projects.load()
+        url, access = enroll(api, org, issue["user"], app, os.environ.get("TEMPLATE") or TEMPLATE, os.environ.get("PREFIX") or PREFIX,
+                             catalog=catalog if catalog.projects else None, now=opened_at(issue), issue=issue["number"])
     except Refusal as refusal:
         issues.post(path + "/comments", {"body": f"@{login} 没有创建仓库: {refusal}"})
         issues.patch(path, {"state": "closed", "state_reason": "not_planned"})

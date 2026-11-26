@@ -15,7 +15,7 @@ body:
     id: app
     attributes:
       label: 应用名
-      description: 小写字母、数字和 `-`, 最多 40 个字符, 领取后不能改.
+      description: 小写字母、数字和 `-`, 最多 40 个字符, 领取后不能改. [项目列表](https://github.com/0x00-Migration/enroll/blob/main/PROJECTS.md) 公布以后, 只能填列表里的项目 id.
       placeholder: markdown-editor
     validations:
       required: true

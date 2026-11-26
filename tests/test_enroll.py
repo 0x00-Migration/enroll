@@ -1,11 +1,19 @@
+import contextlib
+import copy
+import io
+import os
 import sys
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import enroll  # noqa: E402
+import projects  # noqa: E402
 from github import ApiError  # noqa: E402
+from test_projects import entry, listing  # noqa: E402
 
 ORG = "org"
 ALICE = {"login": "alice", "id": 1, "type": "User"}
@@ -102,8 +110,58 @@ class FakeGitHub:
         self.invitations[parts[1] + "/" + parts[2]].pop(int(parts[4]))
 
 
+class FakeIssues:
+    def __init__(self, issue=None):
+        self.issue = issue
+        self.comments = {}
+
+    def get(self, path):
+        return self.issue
+
+    def post(self, path, body):
+        self.comments.setdefault(int(path.split("/")[4]), []).append(body["body"])
+
+    def patch(self, path, body):
+        self.issue.update(body)
+
+
 def run(api, applicant=ALICE, app="notes"):
     return enroll.enroll(api, ORG, applicant, app, sleep=lambda _: None)
+
+
+BEIJING = projects.BEIJING
+WARMUP_TIME = datetime(2026, 11, 28, 12, tzinfo=BEIJING)
+CONTEST_TIME = datetime(2026, 12, 2, 12, tzinfo=BEIJING)
+CATALOG = projects.parse(listing(entry("hello", warmup=True), entry("excalidraw"), entry("obsidian"), entry("foo"), entry("foo-bar")))
+EMPTY = projects.parse(listing())
+
+
+def github_time(moment):
+    return moment.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def claim(api, project, applicant=ALICE, now=CONTEST_TIME, **options):
+    return enroll.enroll(api, ORG, applicant, project, sleep=lambda _: None, catalog=CATALOG, now=now, **options)
+
+
+def form(app):
+    return f"### 应用名\n\n{app}\n\n### 确认\n\n- [X] 我用的是自己的个人 GitHub 账号, 并同意作品以公开仓库的形式提交"
+
+
+def open_issue(api, body, title=enroll.TITLE, user=ALICE, opened=CONTEST_TIME, catalog=EMPTY, **env):
+    issues = FakeIssues({"number": 7, "title": title, "body": body, "user": user, "state": "open", "created_at": github_time(opened)})
+    environ = {"GITHUB_REPOSITORY": f"{ORG}/enroll", "GITHUB_REPOSITORY_OWNER": ORG,
+               "GH_TOKEN": "app", "ISSUE_TOKEN": "issues", "ISSUE_NUMBER": "7", **env}
+    with mock.patch.dict(os.environ, environ, clear=True), \
+            mock.patch.object(enroll, "GitHub", {"app": api, "issues": issues}.get), \
+            mock.patch.object(projects, "load", lambda: catalog), \
+            contextlib.redirect_stdout(io.StringIO()):
+        enroll.main()
+    return issues
+
+
+def state(api):
+    return copy.deepcopy((api.repos, api.variables, api.rulesets, api.collaborators, api.invitations))
 
 
 class EnrollTest(unittest.TestCase):
@@ -224,6 +282,71 @@ class EnrollTest(unittest.TestCase):
     def test_success_message_skips_the_invitation_step_for_writers(self):
         self.assertNotIn("invitations", enroll.success_message("alice", "https://github.com/org/app-notes-alice", "write"))
         self.assertIn("/invitations", enroll.success_message("alice", "https://github.com/org/app-notes-alice", "invited"))
+
+
+
+class ListModeTest(unittest.TestCase):
+    def test_listed_project_claimed_inside_its_window_gets_a_repository(self):
+        api = FakeGitHub()
+        self.assertEqual(claim(api, "excalidraw", issue=7), ("https://github.com/org/app-excalidraw-alice", "invited"))
+        variables = {name: variable["value"] for name, variable in api.variables["org/app-excalidraw-alice"].items()}
+        self.assertEqual(variables, {"STUDENT_ID": "1", "STUDENT_LOGIN": "alice", "APP_NAME": "excalidraw", "CLAIM_ISSUE": "7"})
+
+    def test_id_not_in_the_list_is_refused(self):
+        api = FakeGitHub()
+        with self.assertRaises(enroll.Refusal):
+            claim(api, "notes")
+        self.assertEqual(set(api.repos), {"org/app-template"})
+
+    def test_each_project_is_claimed_only_inside_its_window(self):
+        moments = {
+            "before the warm-up": datetime(2026, 11, 26, 23, 59, 59, tzinfo=BEIJING),
+            "warm-up": WARMUP_TIME,
+            "last second of the warm-up": datetime(2026, 11, 29, 23, 59, 59, tzinfo=BEIJING),
+            "between": datetime(2026, 11, 30, 12, tzinfo=BEIJING),
+            "contest": CONTEST_TIME,
+            "after the contest": datetime(2026, 12, 8, tzinfo=BEIJING),
+        }
+        open_at = {"hello": {"warm-up", "last second of the warm-up"}, "excalidraw": {"contest"}}
+        for project, windows in open_at.items():
+            for label, now in moments.items():
+                with self.subTest(project=project, at=label):
+                    api = FakeGitHub()
+                    if label in windows:
+                        claim(api, project, now=now)
+                    else:
+                        with self.assertRaises(enroll.Refusal):
+                            claim(api, project, now=now)
+                    self.assertEqual(f"org/app-{project}-alice" in api.repos, label in windows)
+
+    def test_archived_repository_is_not_claimed_again(self):
+        for mode, start in [("free", lambda api: run(api, app="excalidraw")), ("list", lambda api: claim(api, "excalidraw"))]:
+            with self.subTest(mode=mode):
+                api = FakeGitHub()
+                start(api)
+                api.repos["org/app-excalidraw-alice"]["archived"] = True
+                before = state(api)
+                with self.assertRaises(enroll.Refusal):
+                    start(api)
+                self.assertEqual(state(api), before)
+
+
+class IssueTest(unittest.TestCase):
+    def test_free_name_is_accepted_while_the_list_is_empty(self):
+        api = FakeGitHub()
+        issues = open_issue(api, form("notes"))
+        self.assertEqual(issues.issue["state_reason"], "completed")
+        self.assertTrue(issues.comments[7][0].startswith("@alice 你的仓库已就绪: https://github.com/org/app-notes-alice"))
+        self.assertEqual(api.variables["org/app-notes-alice"]["CLAIM_ISSUE"]["value"], "7")
+
+    def test_claim_before_its_window_is_refused_on_the_issue_with_the_window(self):
+        api = FakeGitHub()
+        issues = open_issue(api, form("excalidraw"), opened=WARMUP_TIME, catalog=CATALOG)
+        [reply] = issues.comments[7]
+        self.assertTrue(reply.startswith("@alice 没有创建仓库: "))
+        self.assertIn("2026-12-01 00:00 到 2026-12-07 23:59 (北京时间)", reply)
+        self.assertEqual(issues.issue["state_reason"], "not_planned")
+        self.assertNotIn("org/app-excalidraw-alice", api.repos)
 
 
 if __name__ == "__main__":
